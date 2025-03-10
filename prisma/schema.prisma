@@ -10,8 +10,8 @@ datasource db {
 enum UserRole {
   ADMIN
   SCHOOL
-  TEACHER
-  STUDENT
+  COACHING
+  COLLEGE
 }
 
 enum InstitutionType {
@@ -86,54 +86,52 @@ model VerificationToken {
 }
 
 model User {
-  id            String    @id @default(auto()) @map("_id") @db.ObjectId
-  name          String?
-  email         String?   @unique
-  emailVerified DateTime?
-  password      String?
-  image         String?
-  role          UserRole  @default(SCHOOL)
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
-
-  accounts Account[]
-  sessions Session[]
-  school   School?
+  id                String         @id @default(auto()) @map("_id") @db.ObjectId
+  email            String         @unique
+  username         String?        @unique
+  password         String?
+  role             UserRole       @default(SCHOOL)
+  emailVerified    DateTime?
+  image            String?
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
+  accounts         Account[]
+  sessions         Session[]
+  school           School?
+  teacher          Teacher?
+  student          Student?
 }
 
 model School {
-  id                 String         @id @default(auto()) @map("_id") @db.ObjectId
-  userId             String         @unique @db.ObjectId
-  registeredName     String
-  registrationNumber String         @unique
-  type              InstitutionType @default(SCHOOL)
-  streetAddress     String
-  city              String
-  district          String
-  state             String
-  pincode           String
-  officialPhone     String
-  officialEmail     String
-  principalName     String
-  principalPhone    String
-  planType          PlanType       @default(BASIC)
-  planDuration      Int            @default(1)
-  planStartDate     DateTime?
-  planEndDate       DateTime?
-  approvalStatus    ApprovalStatus @default(PENDING)
-  createdAt         DateTime       @default(now())
-  updatedAt         DateTime       @updatedAt
-
-  user      User       @relation(fields: [userId], references: [id])
-  students  Student[]
-  teachers  Teacher[]
-  classes   Class[]
-  payments  Payment[]
+  id                    String         @id @default(auto()) @map("_id") @db.ObjectId
+  userId               String         @unique @db.ObjectId
+  user                 User           @relation(fields: [userId], references: [id])
+  registeredName       String
+  registrationNumber   String         @unique
+  streetAddress        String
+  city                 String
+  district            String
+  state               String
+  pincode             String
+  phoneNumber         String
+  email               String         @unique
+  principalName       String
+  principalPhone      String
+  planType            PlanType       @default(BASIC)
+  planDuration        Int            @default(1)
+  approvalStatus      ApprovalStatus @default(PENDING)
+  createdAt           DateTime       @default(now())
+  updatedAt           DateTime       @updatedAt
+  teachers            Teacher[]
+  students            Student[]
+  classes             Class[]
+  payments            Payment[]
 }
 
 model Student {
   id              String    @id @default(auto()) @map("_id") @db.ObjectId
   schoolId        String    @db.ObjectId
+  userId          String?   @unique @db.ObjectId
   name            String
   rollNumber      String
   dateOfBirth     DateTime?
@@ -148,6 +146,7 @@ model Student {
   updatedAt       DateTime  @updatedAt
 
   school      School       @relation(fields: [schoolId], references: [id])
+  user        User?        @relation(fields: [userId], references: [id])
   attendance  Attendance[]
   fees        Fee[]
   reports     Report[]
@@ -160,6 +159,7 @@ model Student {
 model Teacher {
   id              String    @id @default(auto()) @map("_id") @db.ObjectId
   schoolId        String    @db.ObjectId
+  userId          String?   @unique @db.ObjectId
   name            String
   email           String
   phone           String
@@ -170,9 +170,22 @@ model Teacher {
   updatedAt       DateTime  @updatedAt
 
   school  School   @relation(fields: [schoolId], references: [id])
-  classes Class[]
+  classes TeacherOnClass[]
+  user    User?    @relation(fields: [userId], references: [id])
 
   @@unique([schoolId, email])
+}
+
+model TeacherOnClass {
+  id        String   @id @default(auto()) @map("_id") @db.ObjectId
+  teacherId String   @db.ObjectId
+  classId   String   @db.ObjectId
+  assignedAt DateTime @default(now())
+
+  teacher   Teacher  @relation(fields: [teacherId], references: [id])
+  class     Class    @relation(fields: [classId], references: [id])
+
+  @@unique([teacherId, classId])
 }
 
 model Class {
@@ -186,7 +199,7 @@ model Class {
 
   school   School    @relation(fields: [schoolId], references: [id])
   students Student[]
-  teachers Teacher[]
+  teachers TeacherOnClass[]
 
   @@unique([schoolId, name, section, academicYear])
 }

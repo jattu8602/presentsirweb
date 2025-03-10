@@ -22,8 +22,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   }
 
   // Register the routes
-  router.use('/api/schools', schoolRoutes)
-  router.use('/api/admin', adminRoutes)
+  app.use('/api', schoolRoutes)
+  app.use('/api', adminRoutes)
 
   // Students
   router.get('/api/students', requireAuth, async (req, res) => {
@@ -120,6 +120,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
     res.json(activities)
   })
+
+  app.use(router)
 
   const httpServer = createServer(app)
   return httpServer

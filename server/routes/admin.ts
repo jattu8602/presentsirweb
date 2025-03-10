@@ -1,144 +1,140 @@
 import { Router } from 'express'
 import { prisma } from '../lib/prisma'
-import { ApprovalStatus, UserRole } from '@prisma/client'
-import { sendWelcomeEmail } from '../lib/email'
-import { hash } from 'bcrypt'
+import { z } from 'zod'
+import bcrypt from 'bcrypt'
+import { sendEmail } from '../lib/email'
 
 const router = Router()
 
-// Admin middleware
+// Admin authentication middleware
 const isAdmin = async (req: any, res: any, next: any) => {
-  if (!req.isAuthenticated() || req.user.role !== UserRole.ADMIN) {
-    return res.status(403).json({ error: 'Unauthorized' })
+  if (!req.session.userId) {
+    return res.status(401).json({ error: 'Unauthorized' })
   }
+
+  const user = await prisma.user.findUnique({
+    where: { id: req.session.userId },
+  })
+
+  if (!user || user.role !== 'ADMIN') {
+    return res.status(403).json({ error: 'Forbidden' })
+  }
+
   next()
 }
 
-// Get all schools pending approval
-router.get('/schools/pending', isAdmin, async (req, res) => {
+// Admin login
+router.post('/admin/login', async (req, res) => {
   try {
-    const pendingSchools = await prisma.school.findMany({
-      where: {
-        approvalStatus: ApprovalStatus.PENDING,
-      },
-      include: {
-        user: {
-          select: {
-            email: true,
-            name: true,
-          },
-        },
-      },
+    const schema = z.object({
+      username: z.string(),
+      password: z.string(),
     })
 
-    res.json(pendingSchools)
-  } catch (error) {
-    console.error('Error fetching pending schools:', error)
-    res.status(500).json({ error: 'An error occurred' })
-  }
-})
+    const { username, password } = schema.parse(req.body)
 
-// Approve or reject a school
-router.post('/schools/:id/approval', isAdmin, async (req, res) => {
-  try {
-    const { id } = req.params
-    const { status, message } = req.body
+    // Check against environment variables
+    const adminUsername = process.env.ADMIN_USERNAME || 'admin'
+    const adminPassword = process.env.ADMIN_PASSWORD || 'admin'
 
-    if (
-      status !== ApprovalStatus.APPROVED &&
-      status !== ApprovalStatus.REJECTED
-    ) {
-      return res.status(400).json({ error: 'Invalid status' })
+    if (username !== adminUsername || password !== adminPassword) {
+      return res.status(401).json({ message: 'Invalid credentials' })
     }
 
-    const school = await prisma.school.findUnique({
-      where: { id },
-      include: {
-        user: true,
-      },
+    // Create or get admin user
+    let adminUser = await prisma.user.findFirst({
+      where: { role: 'ADMIN' },
     })
 
-    if (!school) {
-      return res.status(404).json({ error: 'School not found' })
-    }
-
-    // Update school approval status
-    const updatedSchool = await prisma.school.update({
-      where: { id },
-      data: {
-        approvalStatus: status,
-      },
-    })
-
-    // If approved, send welcome email with login credentials
-    if (status === ApprovalStatus.APPROVED) {
-      // Generate a random password
-      const password = Math.random().toString(36).slice(-8)
-      const hashedPassword = await hash(password, 10)
-
-      // Update user password
-      await prisma.user.update({
-        where: { id: school.userId },
+    if (!adminUser) {
+      adminUser = await prisma.user.create({
         data: {
-          password: hashedPassword,
+          email: 'admin@edutrackpro.com',
+          role: 'ADMIN',
+          password: await bcrypt.hash(adminPassword, 10),
         },
       })
-
-      // Send welcome email with password
-      await sendWelcomeEmail(school.user.email!, password)
     }
 
-    res.json(updatedSchool)
+    req.session.userId = adminUser.id
+    res.json({ user: adminUser })
   } catch (error) {
-    console.error('Error updating school approval:', error)
-    res.status(500).json({ error: 'An error occurred' })
+    console.error('Admin login error:', error)
+    res.status(500).json({ message: 'Internal server error' })
   }
 })
 
-// Get admin dashboard analytics
-router.get('/analytics', isAdmin, async (req, res) => {
-  try {
-    const [
-      totalSchools,
-      totalStudents,
-      totalTeachers,
-      schoolsByType,
-      schoolsByPlan,
-      recentApprovals,
-    ] = await Promise.all([
-      prisma.school.count(),
-      prisma.student.count(),
-      prisma.teacher.count(),
-      prisma.school.groupBy({
-        by: ['type'],
-        _count: true,
-      }),
-      prisma.school.groupBy({
-        by: ['planType'],
-        _count: true,
-      }),
-      prisma.school.findMany({
-        where: {
-          approvalStatus: ApprovalStatus.APPROVED,
-        },
-        orderBy: {
-          updatedAt: 'desc',
-        },
-        take: 5,
-      }),
-    ])
+// Get dashboard stats
+router.get('/admin/stats', isAdmin, async (req, res) => {
+  const [schools, pendingSchools, teachers, students] = await Promise.all([
+    prisma.school.count(),
+    prisma.school.count({ where: { approvalStatus: 'PENDING' } }),
+    prisma.teacher.count(),
+    prisma.student.count(),
+  ])
 
-    res.json({
-      totalSchools,
-      totalStudents,
-      totalTeachers,
-      schoolsByType,
-      schoolsByPlan,
-      recentApprovals,
+  res.json({
+    schools,
+    pendingSchools,
+    teachers,
+    students,
+  })
+})
+
+// Get pending schools
+router.get('/admin/schools/pending', isAdmin, async (req, res) => {
+  const schools = await prisma.school.findMany({
+    where: { approvalStatus: 'PENDING' },
+    include: { user: true },
+  })
+  res.json(schools)
+})
+
+// Approve/reject school
+router.post('/admin/schools/:id/approve', isAdmin, async (req, res) => {
+  try {
+    const schema = z.object({
+      status: z.enum(['APPROVED', 'REJECTED']),
+      message: z.string().optional(),
     })
+
+    const { id } = req.params
+    const { status, message } = schema.parse(req.body)
+
+    const school = await prisma.school.update({
+      where: { id: parseInt(id) },
+      data: { approvalStatus: status },
+      include: { user: true },
+    })
+
+    if (status === 'APPROVED') {
+      // Generate temporary password
+      const tempPassword = Math.random().toString(36).slice(-8)
+
+      await prisma.user.update({
+        where: { id: school.userId },
+        data: { password: await bcrypt.hash(tempPassword, 10) },
+      })
+
+      // Send approval email with credentials
+      await sendEmail({
+        to: school.email,
+        subject: 'School Registration Approved',
+        text: `Your school registration has been approved! You can now login with:\n\nEmail: ${school.email}\nTemporary Password: ${tempPassword}\n\nPlease change your password after logging in.`,
+      })
+    } else if (message) {
+      // Send rejection email
+      await sendEmail({
+        to: school.email,
+        subject: 'School Registration Update',
+        text: `Your school registration has been rejected.\n\nReason: ${message}`,
+      })
+    }
+
+    res.json(school)
   } catch (error) {
-    console.error('Error fetching analytics:', error)
-    res.status(500).json({ error: 'An error occurred' })
+    console.error('Error approving/rejecting school:', error)
+    res.status(500).json({ message: 'Internal server error' })
   }
 })
 
