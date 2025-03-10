@@ -22,11 +22,11 @@ import {
 import { Input } from '@/components/ui/input'
 import { useToast } from '@/hooks/use-toast'
 import { Loader2 } from 'lucide-react'
-import { SchoolRegistrationForm } from '@/components/school-registration-form'
+import { RegistrationWizard } from '@/components/school-registration/RegistrationWizard'
 import { z } from 'zod'
 
 const loginSchema = z.object({
-  username: z.string().min(3, 'Username must be at least 3 characters'),
+  email: z.string().email('Invalid email address'),
   password: z.string().min(6, 'Password must be at least 6 characters'),
 })
 
@@ -41,15 +41,15 @@ export default function AuthPage() {
   const loginForm = useForm<LoginFormData>({
     resolver: zodResolver(loginSchema),
     defaultValues: {
-      username: '',
+      email: '',
       password: '',
     },
   })
 
   const onLoginSubmit = async (data: LoginFormData) => {
     try {
-      const user = await loginMutation.mutateAsync(data)
-      if (user.role === 'ADMIN') {
+      const response = await loginMutation.mutateAsync(data)
+      if (response.user.role === 'ADMIN') {
         setLocation('/admin')
       } else {
         setLocation('/dashboard')
@@ -92,27 +92,16 @@ export default function AuthPage() {
       </div>
       <div className="p-4 lg:p-8 h-full flex items-center">
         {isRegistering ? (
-          <Card className="mx-auto w-full max-w-2xl">
-          <CardHeader>
-              <CardTitle>School Registration</CardTitle>
-            <CardDescription>
-                Register your school to get started. Your application will be
-                reviewed by our admin team.
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-              <SchoolRegistrationForm
-                onSuccess={() => setIsRegistering(false)}
-              />
-              <Button
-                variant="link"
-                className="mt-4"
-                onClick={() => setIsRegistering(false)}
-              >
-                Already have an account? Sign in
-              </Button>
-            </CardContent>
-          </Card>
+          <div className="w-full">
+            <Button
+              variant="ghost"
+              className="mb-4"
+              onClick={() => setIsRegistering(false)}
+            >
+              ← Back to Login
+            </Button>
+            <RegistrationWizard />
+          </div>
         ) : (
           <Card className="mx-auto w-full max-w-md">
             <CardHeader className="space-y-1">
@@ -124,42 +113,42 @@ export default function AuthPage() {
               </CardDescription>
             </CardHeader>
             <CardContent>
-                    <Form {...loginForm}>
-                      <form
+              <Form {...loginForm}>
+                <form
                   onSubmit={loginForm.handleSubmit(onLoginSubmit)}
-                        className="space-y-4"
-                      >
-                        <FormField
-                          control={loginForm.control}
-                          name="username"
-                          render={({ field }) => (
-                            <FormItem>
-                              <FormLabel>Username</FormLabel>
-                              <FormControl>
-                                <Input {...field} />
-                              </FormControl>
-                              <FormMessage />
-                            </FormItem>
-                          )}
-                        />
-                        <FormField
-                          control={loginForm.control}
-                          name="password"
-                          render={({ field }) => (
-                            <FormItem>
-                              <FormLabel>Password</FormLabel>
-                              <FormControl>
-                                <Input type="password" {...field} />
-                              </FormControl>
-                              <FormMessage />
-                            </FormItem>
-                          )}
-                        />
-                        <Button
-                          type="submit"
-                          className="w-full"
-                          disabled={loginMutation.isPending}
-                        >
+                  className="space-y-4"
+                >
+                  <FormField
+                    control={loginForm.control}
+                    name="email"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Email</FormLabel>
+                        <FormControl>
+                          <Input {...field} type="email" />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={loginForm.control}
+                    name="password"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Password</FormLabel>
+                        <FormControl>
+                          <Input type="password" {...field} />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <Button
+                    type="submit"
+                    className="w-full"
+                    disabled={loginMutation.isPending}
+                  >
                     {loginMutation.isPending ? (
                       <>
                         <Loader2 className="mr-2 h-4 w-4 animate-spin" />
@@ -168,9 +157,9 @@ export default function AuthPage() {
                     ) : (
                       'Sign In'
                     )}
-                        </Button>
-                      </form>
-                    </Form>
+                  </Button>
+                </form>
+              </Form>
               <div className="mt-4">
                 <div className="relative">
                   <div className="absolute inset-0 flex items-center">
@@ -212,10 +201,10 @@ export default function AuthPage() {
               <div className="mt-4 text-center">
                 <Button variant="link" onClick={() => setIsRegistering(true)}>
                   New school? Register here
-                        </Button>
+                </Button>
               </div>
-          </CardContent>
-        </Card>
+            </CardContent>
+          </Card>
         )}
       </div>
     </div>

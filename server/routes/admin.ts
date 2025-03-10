@@ -4,6 +4,7 @@ import { z } from 'zod'
 import bcrypt from 'bcrypt'
 import { sendEmail } from '../lib/email'
 import { Session } from 'express-session'
+import { isAdmin } from '../middleware/auth'
 
 declare module 'express-session' {
   interface SessionData {
@@ -13,8 +14,11 @@ declare module 'express-session' {
 
 const router = Router()
 
+// Middleware to check if user is admin
+router.use(isAdmin)
+
 // Admin authentication middleware
-const isAdmin = async (req: any, res: any, next: any) => {
+const isAdminMiddleware = async (req: any, res: any, next: any) => {
   if (!req.session.userId) {
     return res.status(401).json({ error: 'Unauthorized' })
   }
@@ -62,8 +66,6 @@ router.post('/admin/login', async (req, res) => {
         },
       })
     }
-
-    
 
     req.session.userId = adminUser.id
     res.json({ user: adminUser })
@@ -144,6 +146,134 @@ router.post('/admin/schools/:id/approve', isAdmin, async (req, res) => {
   } catch (error) {
     console.error('Error approving/rejecting school:', error)
     res.status(500).json({ message: 'Internal server error' })
+  }
+})
+
+// Get all schools
+router.get('/schools', async (req, res) => {
+  try {
+    const schools = await prisma.school.findMany({
+      select: {
+        id: true,
+        registeredName: true,
+        registrationNumber: true,
+        email: true,
+        principalName: true,
+        approvalStatus: true,
+        createdAt: true,
+      },
+      orderBy: {
+        createdAt: 'desc',
+      },
+    })
+
+    res.json(schools)
+  } catch (error) {
+    console.error('Error fetching schools:', error)
+    res.status(500).json({ message: 'Failed to fetch schools' })
+  }
+})
+
+// Get analytics data
+router.get('/analytics', async (req, res) => {
+  try {
+    const [totalSchools, pendingApprovals, totalTeachers, totalStudents] =
+      await Promise.all([
+        prisma.school.count({
+          where: { approvalStatus: 'APPROVED' },
+        }),
+        prisma.school.count({
+          where: { approvalStatus: 'PENDING' },
+        }),
+        prisma.teacher.count(),
+        prisma.student.count(),
+      ])
+
+    res.json({
+      totalSchools,
+      pendingApprovals,
+      totalTeachers,
+      totalStudents,
+    })
+  } catch (error) {
+    console.error('Error fetching analytics:', error)
+    res.status(500).json({ message: 'Failed to fetch analytics' })
+  }
+})
+
+// Approve or reject school
+router.post('/schools/:id/approve', async (req, res) => {
+  try {
+    const { id } = req.params
+    const { status } = z
+      .object({
+        status: z.enum(['APPROVED', 'REJECTED']),
+      })
+      .parse(req.body)
+
+    const school = await prisma.school.findUnique({
+      where: { id },
+      include: {
+        user: true,
+      },
+    })
+
+    if (!school) {
+      return res.status(404).json({ message: 'School not found' })
+    }
+
+    await prisma.school.update({
+      where: { id },
+      data: { approvalStatus: status },
+    })
+
+    // Send email notification
+    const emailSubject =
+      status === 'APPROVED'
+        ? 'School Registration Approved - EduTrackPro'
+        : 'School Registration Update - EduTrackPro'
+
+    const emailText =
+      status === 'APPROVED'
+        ? `
+          Dear ${school.principalName},
+
+          Congratulations! Your school registration for ${school.registeredName} has been approved.
+
+          You can now log in to your school dashboard using:
+          Email: ${school.email}
+
+          If you haven't set up your password yet, you can use the "Forgot Password" option on the login page.
+
+          Best regards,
+          EduTrackPro Team
+        `
+        : `
+          Dear ${school.principalName},
+
+          We regret to inform you that your school registration for ${school.registeredName} could not be approved at this time.
+
+          Please contact our support team for more information.
+
+          Best regards,
+          EduTrackPro Team
+        `
+
+    await sendEmail({
+      to: school.email,
+      subject: emailSubject,
+      text: emailText,
+    })
+
+    res.json({ message: `School ${status.toLowerCase()} successfully` })
+  } catch (error) {
+    console.error('Error updating school status:', error)
+    res.status(400).json({
+      message:
+        error instanceof Error
+          ? error.message
+          : 'Failed to update school status',
+    })
   }
 })
 

@@ -10,22 +10,29 @@ import { useToast } from '@/hooks/use-toast'
 
 type UserRole = 'ADMIN' | 'SCHOOL' | 'TEACHER' | 'STUDENT'
 
-interface User extends SelectUser {
-  role: UserRole
+interface User {
+  id: string
+  email: string
+  role: string
+  name?: string
 }
 
 type AuthContextType = {
   user: User | null
   isLoading: boolean
   error: Error | null
-  loginMutation: UseMutationResult<User, Error, LoginData>
+  loginMutation: UseMutationResult<LoginResponse, Error, LoginData>
   logoutMutation: UseMutationResult<void, Error, void>
   registerMutation: UseMutationResult<User, Error, InsertUser>
 }
 
-type LoginData = {
-  username: string
+interface LoginData {
+  email: string
   password: string
+}
+
+interface LoginResponse {
+  user: User
 }
 
 export const AuthContext = createContext<AuthContextType | null>(null)
@@ -41,11 +48,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     queryFn: getQueryFn({ on401: 'returnNull' }),
   })
 
-  const loginMutation = useMutation({
-    mutationFn: async (credentials: LoginData) => {
-      const res = await apiRequest('POST', '/api/login', credentials)
-      const userData = await res.json()
-      return userData
+  const loginMutation = useMutation<LoginResponse, Error, LoginData>({
+    mutationFn: async (data) => {
+      const response = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(data),
+      })
+
+      if (!response.ok) {
+        const error = await response.json()
+        throw new Error(error.message || 'Login failed')
+      }
+
+      return response.json()
     },
     onSuccess: (data) => {
       queryClient.setQueryData(['/api/user'], data.user)
