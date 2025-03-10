@@ -63,6 +63,8 @@ router.post('/admin/login', async (req, res) => {
       })
     }
 
+    
+
     req.session.userId = adminUser.id
     res.json({ user: adminUser })
   } catch (error) {
