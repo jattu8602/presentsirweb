@@ -27,28 +27,5 @@
       "src": "/(.*)",
       "dest": "dist/public/index.html"
     }
-  ],
-  "env": {
-    "NODE_ENV": "production",
-    "DATABASE_URL": "@database_url",
-    "CLOUDINARY_CLOUD_NAME": "@cloudinary_cloud_name",
-    "CLOUDINARY_API_KEY": "@cloudinary_api_key",
-    "CLOUDINARY_API_SECRET": "@cloudinary_api_secret",
-    "GOOGLE_CLIENT_ID": "@google_client_id",
-    "GOOGLE_CLIENT_SECRET": "@google_client_secret",
-    "NEXTAUTH_SECRET": "@nextauth_secret",
-    "NEXTAUTH_URL": "https://presentsirweb.vercel.app",
-    "NEXTAUTH_URL_INTERNAL": "https://presentsirweb.vercel.app",
-    "NEXT_DEFAULT_PASSWORD": "@next_default_password",
-    "NEXT_PUBLIC_APP_URL": "https://presentsirweb.vercel.app",
-    "RAZORPAY_KEY_ID": "@razorpay_key_id",
-    "RAZORPAY_KEY_SECRET": "@razorpay_key_secret",
-    "NEXT_PUBLIC_RAZORPAY_KEY_ID": "@razorpay_key_id",
-    "EMAIL_USER": "@email_user",
-    "EMAIL_PASSWORD": "@email_password",
-    "FRONTEND_URL": "https://presentsirweb.vercel.app",
-    "SESSION_SECRET": "@session_secret",
-    "ADMIN_USERNAME": "@admin_username",
-    "ADMIN_PASSWORD": "@admin_password"
-  }
+  ]
 }
