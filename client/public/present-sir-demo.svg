@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 300 600">
+  <style>
+    @keyframes pulse {
+      0% { opacity: 1; }
+      50% { opacity: 0.5; }
+      100% { opacity: 1; }
+    }
+    .pulse {
+      animation: pulse 2s infinite;
+    }
+  </style>
+  <rect width="300" height="600" fill="#f1f5f9" rx="20"/>
+  <circle cx="150" cy="100" r="30" fill="#0f172a" class="pulse"/>
+  <rect x="50" y="200" width="200" height="20" fill="#0f172a" rx="10"/>
+  <rect x="50" y="240" width="150" height="20" fill="#0f172a" rx="10"/>
+  <rect x="50" y="300" width="200" height="200" fill="#0f172a" rx="10"/>
+</svg>
