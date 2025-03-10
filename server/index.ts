@@ -1,71 +1,57 @@
-import express, { type Request, Response, NextFunction } from "express";
-import { registerRoutes } from "./routes";
-import { setupVite, serveStatic, log } from "./vite";
+import express from 'express'
+import { fileURLToPath } from 'url'
+import { dirname, resolve } from 'path'
+import { registerRoutes } from './routes'
 
-const app = express();
-app.use(express.json());
-app.use(express.urlencoded({ extended: false }));
+const __filename = fileURLToPath(import.meta.url)
+const __dirname = dirname(__filename)
 
-app.use((req, res, next) => {
-  const start = Date.now();
-  const path = req.path;
-  let capturedJsonResponse: Record<string, any> | undefined = undefined;
+const app = express()
 
-  const originalResJson = res.json;
-  res.json = function (bodyJson, ...args) {
-    capturedJsonResponse = bodyJson;
-    return originalResJson.apply(res, [bodyJson, ...args]);
-  };
+// Error handling middleware
+app.use((err: any, req: any, res: any, next: any) => {
+  console.error('Error:', err)
+  res.status(500).json({ error: 'Internal Server Error' })
+})
 
-  res.on("finish", () => {
-    const duration = Date.now() - start;
-    if (path.startsWith("/api")) {
-      let logLine = `${req.method} ${path} ${res.statusCode} in ${duration}ms`;
-      if (capturedJsonResponse) {
-        logLine += ` :: ${JSON.stringify(capturedJsonResponse)}`;
-      }
+app.use(express.json())
+app.use(express.urlencoded({ extended: true }))
 
-      if (logLine.length > 80) {
-        logLine = logLine.slice(0, 79) + "…";
-      }
+// Serve static files from the dist/public directory
+try {
+  const publicPath = resolve(__dirname, '../dist/public')
+  app.use(express.static(publicPath))
+  console.log('Serving static files from:', publicPath)
+} catch (error) {
+  console.error('Error setting up static files:', error)
+}
 
-      log(logLine);
-    }
-  });
+// Register API routes
+try {
+  registerRoutes(app)
+} catch (error) {
+  console.error('Error registering routes:', error)
+}
 
-  next();
-});
-
-(async () => {
-  const server = await registerRoutes(app);
-
-  app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
-    const status = err.status || err.statusCode || 500;
-    const message = err.message || "Internal Server Error";
-
-    res.status(status).json({ message });
-    throw err;
-  });
-
-  // importantly only setup vite in development and after
-  // setting up all the other routes so the catch-all route
-  // doesn't interfere with the other routes
-  if (app.get("env") === "development") {
-    await setupVite(app, server);
-  } else {
-    serveStatic(app);
+// Serve index.html for all other routes
+app.get('*', (req, res) => {
+  try {
+    const indexPath = resolve(__dirname, '../dist/public/index.html')
+    res.sendFile(indexPath)
+  } catch (error) {
+    console.error('Error serving index.html:', error)
+    res.status(500).send('Error loading the application')
   }
+})
 
-  
+const port = process.env.PORT || 3000
 
-  // ALWAYS serve the app on port 3000
-  // this serves both the API and the client
-  const port = 3000;
-  server.listen({
-    port,
-    host: "0.0.0.0", // Change from "localhost" to "0.0.0.0"
-    reusePort: true,
-  }, () => {
-    log(`serving on port ${port}`);
-  });
-})();
+// Export the app for Vercel
+export default app
+
+// Only listen if not running on Vercel
+if (process.env.NODE_ENV !== 'production') {
+  app.listen(port, () => {
+    console.log(`Server running at http://localhost:${port}`)
+  })
+}

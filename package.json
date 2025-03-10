@@ -8,10 +8,10 @@
     "build": "npm run build:client && npm run build:server",
     "build:client": "vite build",
     "build:server": "tsc -p tsconfig.server.json",
-    "start": "node dist/server/production.js",
+    "start": "NODE_ENV=production node dist/server/index.js",
     "check": "tsc",
     "db:push": "drizzle-kit push",
-    "vercel-build": "npm run build"
+    "vercel-build": "npm run build:client"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.9.1",
