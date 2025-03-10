@@ -8,4 +8,4 @@ export * from './use-toast'
 export * from './toast'
 
 // Re-export types
-export type { Toast, UseToastReturn } from './use-toast'
+export type { ToastProps as Toast } from './toast'

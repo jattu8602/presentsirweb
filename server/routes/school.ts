@@ -41,7 +41,7 @@ router.post('/register', async (req, res) => {
       where: {
         OR: [
           { registrationNumber: data.registrationNumber },
-          { officialEmail: data.officialEmail },
+          { email: data.officialEmail },
         ],
       },
     })
@@ -60,7 +60,7 @@ router.post('/register', async (req, res) => {
     const user = await prisma.user.create({
       data: {
         email: data.officialEmail,
-        name: data.registeredName,
+        username: data.registeredName.toLowerCase().replace(/\s+/g, '_'),
         password: hashedPassword,
         role: 'SCHOOL',
       },
@@ -69,8 +69,20 @@ router.post('/register', async (req, res) => {
     // Create school profile
     const school = await prisma.school.create({
       data: {
-        ...data,
         userId: user.id,
+        registeredName: data.registeredName,
+        registrationNumber: data.registrationNumber,
+        streetAddress: data.streetAddress,
+        city: data.city,
+        district: data.district,
+        state: data.state,
+        pincode: data.pincode,
+        phoneNumber: data.officialPhone,
+        email: data.officialEmail,
+        principalName: data.principalName,
+        principalPhone: data.principalPhone,
+        planType: data.planType,
+        planDuration: data.planDuration,
       },
     })
 

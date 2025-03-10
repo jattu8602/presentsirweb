@@ -3,6 +3,13 @@ import { prisma } from '../lib/prisma'
 import { z } from 'zod'
 import bcrypt from 'bcrypt'
 import { sendEmail } from '../lib/email'
+import { Session } from 'express-session'
+
+declare module 'express-session' {
+  interface SessionData {
+    userId: string
+  }
+}
 
 const router = Router()
 
@@ -102,7 +109,7 @@ router.post('/admin/schools/:id/approve', isAdmin, async (req, res) => {
     const { status, message } = schema.parse(req.body)
 
     const school = await prisma.school.update({
-      where: { id: parseInt(id) },
+      where: { id }, // MongoDB expects string IDs
       data: { approvalStatus: status },
       include: { user: true },
     })

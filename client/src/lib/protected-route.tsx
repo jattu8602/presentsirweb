@@ -17,21 +17,16 @@ export function ProtectedRoute({
 
   if (isLoading) {
     return (
-      <Route path={path}>
-        <div className="flex items-center justify-center min-h-screen">
-          <Loader2 className="h-8 w-8 animate-spin text-border" />
-        </div>
-      </Route>
+      <div className="flex items-center justify-center min-h-screen">
+        <Loader2 className="h-8 w-8 animate-spin text-border" />
+      </div>
     )
   }
 
   if (!user || (role && user.role !== role)) {
-    return (
-      <Route path={path}>
-        <Redirect to="/auth" />
-      </Route>
-    )
+    const redirectPath = role === 'ADMIN' ? '/auth/admin' : '/auth'
+    return <Redirect to={redirectPath} />
   }
 
-  return <Component />
+  return <Route path={path} component={Component} />
 }

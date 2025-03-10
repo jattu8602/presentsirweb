@@ -44,10 +44,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const loginMutation = useMutation({
     mutationFn: async (credentials: LoginData) => {
       const res = await apiRequest('POST', '/api/login', credentials)
-      return res.json()
+      const userData = await res.json()
+      return userData
     },
-    onSuccess: (user: User) => {
-      queryClient.setQueryData(['/api/user'], user)
+    onSuccess: (data) => {
+      queryClient.setQueryData(['/api/user'], data.user)
+      // Redirect based on user role
+      if (data.user.role === 'ADMIN') {
+        window.location.href = '/admin'
+      } else {
+        window.location.href = '/dashboard'
+      }
     },
     onError: (error: Error) => {
       toast({

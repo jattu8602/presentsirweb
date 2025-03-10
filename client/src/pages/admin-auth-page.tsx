@@ -24,6 +24,7 @@ import { Loader2 } from 'lucide-react'
 import { z } from 'zod'
 import { useMutation } from '@tanstack/react-query'
 import { apiRequest } from '@/lib/queryClient'
+import { queryClient } from '@/lib/queryClient'
 
 const loginSchema = z.object({
   username: z.string().min(3, 'Username must be at least 3 characters'),
@@ -52,13 +53,16 @@ export default function AdminAuthPage() {
           const error = await res.json()
           throw new Error(error.message || 'Login failed')
         }
-        return res.json()
+        const userData = await res.json()
+        // Update auth context with admin user data
+        await queryClient.setQueryData(['/api/user'], userData.user)
+        return userData
       } catch (error) {
         throw new Error(error instanceof Error ? error.message : 'Login failed')
       }
     },
     onSuccess: (data) => {
-      if (data.user.role !== 'ADMIN') {
+      if (!data.user || data.user.role !== 'ADMIN') {
         toast({
           title: 'Access Denied',
           description: 'This login is for administrators only.',
@@ -66,6 +70,7 @@ export default function AdminAuthPage() {
         })
         return
       }
+      // Redirect to admin dashboard
       setLocation('/admin')
     },
     onError: (error: Error) => {

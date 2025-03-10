@@ -93,14 +93,14 @@ export default function AuthPage() {
       <div className="p-4 lg:p-8 h-full flex items-center">
         {isRegistering ? (
           <Card className="mx-auto w-full max-w-2xl">
-            <CardHeader>
+          <CardHeader>
               <CardTitle>School Registration</CardTitle>
-              <CardDescription>
+            <CardDescription>
                 Register your school to get started. Your application will be
                 reviewed by our admin team.
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
               <SchoolRegistrationForm
                 onSuccess={() => setIsRegistering(false)}
               />
@@ -124,42 +124,42 @@ export default function AuthPage() {
               </CardDescription>
             </CardHeader>
             <CardContent>
-              <Form {...loginForm}>
-                <form
+                    <Form {...loginForm}>
+                      <form
                   onSubmit={loginForm.handleSubmit(onLoginSubmit)}
-                  className="space-y-4"
-                >
-                  <FormField
-                    control={loginForm.control}
-                    name="username"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Username</FormLabel>
-                        <FormControl>
-                          <Input {...field} />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                  <FormField
-                    control={loginForm.control}
-                    name="password"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Password</FormLabel>
-                        <FormControl>
-                          <Input type="password" {...field} />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                  <Button
-                    type="submit"
-                    className="w-full"
-                    disabled={loginMutation.isPending}
-                  >
+                        className="space-y-4"
+                      >
+                        <FormField
+                          control={loginForm.control}
+                          name="username"
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel>Username</FormLabel>
+                              <FormControl>
+                                <Input {...field} />
+                              </FormControl>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+                        <FormField
+                          control={loginForm.control}
+                          name="password"
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel>Password</FormLabel>
+                              <FormControl>
+                                <Input type="password" {...field} />
+                              </FormControl>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+                        <Button
+                          type="submit"
+                          className="w-full"
+                          disabled={loginMutation.isPending}
+                        >
                     {loginMutation.isPending ? (
                       <>
                         <Loader2 className="mr-2 h-4 w-4 animate-spin" />
@@ -168,9 +168,9 @@ export default function AuthPage() {
                     ) : (
                       'Sign In'
                     )}
-                  </Button>
-                </form>
-              </Form>
+                        </Button>
+                      </form>
+                    </Form>
               <div className="mt-4">
                 <div className="relative">
                   <div className="absolute inset-0 flex items-center">
@@ -212,10 +212,10 @@ export default function AuthPage() {
               <div className="mt-4 text-center">
                 <Button variant="link" onClick={() => setIsRegistering(true)}>
                   New school? Register here
-                </Button>
+                        </Button>
               </div>
-            </CardContent>
-          </Card>
+          </CardContent>
+        </Card>
         )}
       </div>
     </div>
