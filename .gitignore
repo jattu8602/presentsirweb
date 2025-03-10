@@ -47,7 +47,8 @@ out/
 
 # Local Netlify folder
 .netlify
-
+.env
+.env.local
 server/public
 vite.config.ts.*
 *.tar.gz
