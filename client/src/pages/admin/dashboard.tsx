@@ -1,25 +1,9 @@
-import { useEffect, useState } from 'react'
-import { useAuth } from '@/hooks/use-auth'
+import { useState, useEffect } from 'react'
 import { useLocation } from 'wouter'
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from '@/components/ui/card'
+import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table'
 import { Badge } from '@/components/ui/badge'
 import { useToast } from '@/hooks/use-toast'
-import { Loader2, CheckCircle, XCircle } from 'lucide-react'
 
 interface School {
   id: string
@@ -27,60 +11,64 @@ interface School {
   registrationNumber: string
   email: string
   principalName: string
+  institutionType: string
   approvalStatus: 'PENDING' | 'APPROVED' | 'REJECTED'
   createdAt: string
 }
 
-interface Analytics {
-  totalSchools: number
-  pendingApprovals: number
-  totalTeachers: number
-  totalStudents: number
-}
-
 export default function AdminDashboard() {
-  const [, setLocation] = useLocation()
-  const { user } = useAuth()
-  const { toast } = useToast()
   const [schools, setSchools] = useState<School[]>([])
-  const [analytics, setAnalytics] = useState<Analytics>({
-    totalSchools: 0,
-    pendingApprovals: 0,
-    totalTeachers: 0,
-    totalStudents: 0,
-  })
   const [isLoading, setIsLoading] = useState(true)
+  const [, setLocation] = useLocation()
+  const { toast } = useToast()
 
   useEffect(() => {
-    if (!user || user.role !== 'ADMIN') {
-      setLocation('/auth')
+    const token = localStorage.getItem('adminToken')
+    console.log('Checking admin token:', token ? 'Present' : 'Missing')
+
+    if (!token) {
+      console.log('No admin token found, redirecting to login')
+      setLocation('/admin/login')
       return
     }
 
-    fetchData()
-  }, [user, setLocation])
+    fetchSchools()
+  }, [setLocation])
 
-  const fetchData = async () => {
+  const fetchSchools = async () => {
+    const token = localStorage.getItem('adminToken')
+    console.log('Fetching schools with token:', token ? 'Present' : 'Missing')
+
     try {
-      const [schoolsRes, analyticsRes] = await Promise.all([
-        fetch('/api/admin/schools'),
-        fetch('/api/admin/analytics'),
-      ])
+      const response = await fetch('/api/schools/pending', {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      })
 
-      if (!schoolsRes.ok || !analyticsRes.ok) {
-        throw new Error('Failed to fetch data')
+      console.log('Schools API response status:', response.status)
+
+      if (!response.ok) {
+        if (response.status === 403) {
+          console.error('Authorization failed, redirecting to login')
+          localStorage.removeItem('adminToken')
+          setLocation('/admin/login')
+          return
+        }
+        const errorData = await response.json()
+        console.error('Failed to fetch schools:', errorData)
+        throw new Error(errorData.message || 'Failed to fetch schools')
       }
 
-      const schoolsData = await schoolsRes.json()
-      const analyticsData = await analyticsRes.json()
-
-      setSchools(schoolsData)
-      setAnalytics(analyticsData)
+      const data = await response.json()
+      console.log('Schools fetched successfully:', data.length, 'schools')
+      setSchools(data)
     } catch (error) {
-      console.error('Error fetching data:', error)
+      console.error('Error in fetchSchools:', error)
       toast({
         title: 'Error',
-        description: 'Failed to load dashboard data',
+        description:
+          error instanceof Error ? error.message : 'Failed to fetch schools',
         variant: 'destructive',
       })
     } finally {
@@ -93,10 +81,11 @@ export default function AdminDashboard() {
     status: 'APPROVED' | 'REJECTED'
   ) => {
     try {
-      const response = await fetch(`/api/admin/schools/${schoolId}/approve`, {
+      const response = await fetch(`/api/schools/${schoolId}/approve`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          Authorization: `Bearer ${localStorage.getItem('adminToken')}`,
         },
         body: JSON.stringify({ status }),
       })
@@ -105,170 +94,108 @@ export default function AdminDashboard() {
         throw new Error('Failed to update school status')
       }
 
-      // Update local state
-      setSchools((prevSchools) =>
-        prevSchools.map((school) =>
-          school.id === schoolId
-            ? { ...school, approvalStatus: status }
-            : school
-        )
-      )
-
-      // Update analytics
-      setAnalytics((prev) => ({
-        ...prev,
-        pendingApprovals: prev.pendingApprovals - 1,
-        totalSchools:
-          status === 'APPROVED' ? prev.totalSchools + 1 : prev.totalSchools,
-      }))
+      // Refresh the schools list
+      fetchSchools()
 
       toast({
         title: 'Success',
         description: `School ${status.toLowerCase()} successfully`,
       })
     } catch (error) {
-      console.error('Error updating school status:', error)
       toast({
         title: 'Error',
-        description: 'Failed to update school status',
+        description:
+          error instanceof Error
+            ? error.message
+            : 'Failed to update school status',
         variant: 'destructive',
       })
     }
   }
 
+  const handleLogout = () => {
+    localStorage.removeItem('adminToken')
+    setLocation('/admin/login')
+  }
+
   if (isLoading) {
     return (
-      <div className="flex h-screen items-center justify-center">
-        <Loader2 className="h-8 w-8 animate-spin" />
+      <div className="min-h-screen flex items-center justify-center bg-background">
+        <p>Loading...</p>
       </div>
     )
   }
 
   return (
-    <div className="container mx-auto py-8">
-      <h1 className="text-3xl font-bold mb-8">Admin Dashboard</h1>
+    <div className="min-h-screen bg-background p-6">
+      <div className="max-w-7xl mx-auto">
+        <div className="flex justify-between items-center mb-6">
+          <h1 className="text-2xl font-bold">School Registrations</h1>
+          <Button variant="outline" onClick={handleLogout}>
+            Logout
+          </Button>
+        </div>
 
-      <div className="grid gap-4 md:grid-cols-4 mb-8">
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Total Schools</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{analytics.totalSchools}</div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">
-              Pending Approvals
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">
-              {analytics.pendingApprovals}
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">
-              Total Teachers
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{analytics.totalTeachers}</div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">
-              Total Students
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{analytics.totalStudents}</div>
-          </CardContent>
-        </Card>
-      </div>
-
-      <Card>
-        <CardHeader>
-          <CardTitle>School Registrations</CardTitle>
-          <CardDescription>
-            Manage and approve school registration requests
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>School Name</TableHead>
-                <TableHead>Registration Number</TableHead>
-                <TableHead>Email</TableHead>
-                <TableHead>Principal</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead>Date</TableHead>
-                <TableHead>Actions</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {schools.map((school) => (
-                <TableRow key={school.id}>
-                  <TableCell className="font-medium">
-                    {school.registeredName}
-                  </TableCell>
-                  <TableCell>{school.registrationNumber}</TableCell>
-                  <TableCell>{school.email}</TableCell>
-                  <TableCell>{school.principalName}</TableCell>
-                  <TableCell>
+        <div className="grid gap-4">
+          {schools.length === 0 ? (
+            <Card className="p-6 text-center text-muted-foreground">
+              No pending registrations
+            </Card>
+          ) : (
+            schools.map((school) => (
+              <Card key={school.id} className="p-6">
+                <div className="flex justify-between items-start">
+                  <div>
+                    <h2 className="text-xl font-semibold mb-2">
+                      {school.registeredName}
+                    </h2>
+                    <div className="space-y-1 text-sm text-muted-foreground">
+                      <p>Registration Number: {school.registrationNumber}</p>
+                      <p>Type: {school.institutionType}</p>
+                      <p>Principal: {school.principalName}</p>
+                      <p>Email: {school.email}</p>
+                      <p>
+                        Registered:{' '}
+                        {new Date(school.createdAt).toLocaleDateString()}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="space-y-2">
                     <Badge
                       variant={
-                        school.approvalStatus === 'APPROVED'
+                        school.approvalStatus === 'PENDING'
+                          ? 'default'
+                          : school.approvalStatus === 'APPROVED'
                           ? 'secondary'
-                          : school.approvalStatus === 'REJECTED'
-                          ? 'destructive'
-                          : 'default'
+                          : 'destructive'
                       }
                     >
                       {school.approvalStatus}
                     </Badge>
-                  </TableCell>
-                  <TableCell>
-                    {new Date(school.createdAt).toLocaleDateString()}
-                  </TableCell>
-                  <TableCell>
                     {school.approvalStatus === 'PENDING' && (
-                      <div className="flex space-x-2">
+                      <div className="flex gap-2 mt-4">
                         <Button
                           size="sm"
-                          variant="outline"
-                          className="flex items-center"
                           onClick={() => handleApproval(school.id, 'APPROVED')}
                         >
-                          <CheckCircle className="h-4 w-4 mr-1" />
                           Approve
                         </Button>
                         <Button
                           size="sm"
-                          variant="outline"
-                          className="flex items-center"
+                          variant="destructive"
                           onClick={() => handleApproval(school.id, 'REJECTED')}
                         >
-                          <XCircle className="h-4 w-4 mr-1" />
                           Reject
                         </Button>
                       </div>
                     )}
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </CardContent>
-      </Card>
+                  </div>
+                </div>
+              </Card>
+            ))
+          )}
+        </div>
+      </div>
     </div>
   )
 }

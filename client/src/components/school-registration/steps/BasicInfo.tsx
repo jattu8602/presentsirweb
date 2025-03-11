@@ -78,6 +78,29 @@ export function BasicInfo({ form }: BasicInfoProps) {
           </FormItem>
         )}
       />
+
+      <FormField
+        control={form.control}
+        name="institutionType"
+        render={({ field }) => (
+          <FormItem>
+            <FormLabel>Institution Type</FormLabel>
+            <Select onValueChange={field.onChange} defaultValue={field.value}>
+              <FormControl>
+                <SelectTrigger>
+                  <SelectValue placeholder="Select institution type" />
+                </SelectTrigger>
+              </FormControl>
+              <SelectContent>
+                <SelectItem value="SCHOOL">School</SelectItem>
+                <SelectItem value="COACHING">Coaching Institute</SelectItem>
+                <SelectItem value="COLLEGE">College</SelectItem>
+              </SelectContent>
+            </Select>
+            <FormMessage />
+          </FormItem>
+        )}
+      />
     </div>
   )
 }

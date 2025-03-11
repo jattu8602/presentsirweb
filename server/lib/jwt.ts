@@ -1,30 +1,24 @@
 import jwt from 'jsonwebtoken'
-import { User, UserRole } from '@prisma/client'
+import { UserRole } from '@prisma/client'
 
-const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key'
+interface TokenPayload {
+  id: string
+  role: UserRole
+}
 
-export const generateToken = (user: User) => {
+export function generateToken(payload: TokenPayload): string {
   return jwt.sign(
+    payload,
+    process.env.JWT_SECRET || process.env.SESSION_SECRET!,
     {
-      id: user.id,
-      email: user.email,
-      role: user.role,
-      name: user.username,
-    },
-    JWT_SECRET,
-    { expiresIn: '24h' }
+      expiresIn: '1d',
+    }
   )
 }
 
-export const verifyToken = (token: string) => {
-  try {
-    return jwt.verify(token, JWT_SECRET) as {
-      id: string
-      email: string
-      role: UserRole
-      name?: string
-    }
-  } catch (error) {
-    throw new Error('Invalid token')
-  }
+export function verifyToken(token: string): TokenPayload {
+  return jwt.verify(
+    token,
+    process.env.JWT_SECRET || process.env.SESSION_SECRET!
+  ) as TokenPayload
 }

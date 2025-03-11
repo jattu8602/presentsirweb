@@ -3,7 +3,8 @@ import cors from 'cors'
 import { join } from 'path'
 import { fileURLToPath } from 'url'
 import { dirname } from 'path'
-import routes from './routes'
+import schoolRoutes from './routes/schools'
+import adminRoutes from './routes/admin'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = dirname(__filename)
@@ -15,7 +16,8 @@ app.use(cors())
 app.use(express.json())
 
 // API routes
-app.use('/api', routes)
+app.use('/api/schools', schoolRoutes)
+app.use('/api/admin', adminRoutes)
 
 // Serve static files from the React app
 app.use(express.static(join(__dirname, '../dist/public')))
