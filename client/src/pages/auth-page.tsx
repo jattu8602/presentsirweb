@@ -77,46 +77,49 @@ export default function AuthPage() {
 
   return (
     <div className="min-h-screen bg-background">
-      <div className="container relative min-h-screen flex-col items-center justify-center grid lg:max-w-none lg:grid-cols-2 lg:px-0">
-        <div className="relative hidden h-full flex-col bg-muted p-10 text-white lg:flex dark:border-r">
-          <div className="absolute inset-0 bg-zinc-900" />
-          <div className="relative z-20 flex items-center text-lg font-medium">
-            <img src="/logo.png" alt="Logo" className="h-8 w-8 mr-2" />
-            EduTrackPro
-          </div>
-          <div className="relative z-20 mt-auto">
-            <blockquote className="space-y-2">
-              <p className="text-lg">
-                "Streamline your educational institution's management with our
-                comprehensive solution."
-              </p>
-              <p className="text-sm">
-                Register your school today and join our growing network of
-                educational institutions.
-              </p>
-            </blockquote>
+      {isRegistering ? (
+        // Registration view: full screen layout
+        <div className="container relative min-h-screen flex items-center justify-center">
+          <div className="w-full p-4">
+            <Button
+              variant="ghost"
+              className="mb-4"
+              onClick={() => {
+                console.log('Back to login clicked')
+                setIsRegistering(false)
+              }}
+            >
+              ← Back to Login
+            </Button>
+            <div className="bg-card rounded-lg shadow-sm p-6">
+              <RegistrationWizard />
+            </div>
           </div>
         </div>
-        <div className="lg:p-8 h-full flex items-center overflow-y-auto">
-          <div className="mx-auto w-full max-w-2xl">
-            {isRegistering ? (
-              <div className="w-full p-4">
-                <Button
-                  variant="ghost"
-                  className="mb-4"
-                  onClick={() => {
-                    console.log('Back to login clicked')
-                    setIsRegistering(false)
-                  }}
-                >
-                  ← Back to Login
-                </Button>
-                <div className="bg-card rounded-lg shadow-sm p-6">
-                  {console.log('Rendering RegistrationWizard')}
-                  <RegistrationWizard />
-                </div>
-              </div>
-            ) : (
+      ) : (
+        // Login view: two-column layout with UI side and form
+        <div className="container relative min-h-screen flex-col items-center justify-center grid lg:max-w-none lg:grid-cols-2 lg:px-0">
+          <div className="relative hidden h-full flex-col bg-muted p-10 text-white lg:flex dark:border-r">
+            <div className="absolute inset-0 bg-zinc-900" />
+            <div className="relative z-20 flex items-center text-lg font-medium">
+              <img src="/logo.png" alt="Logo" className="h-8 w-8 mr-2" />
+              EduTrackPro
+            </div>
+            <div className="relative z-20 mt-auto">
+              <blockquote className="space-y-2">
+                <p className="text-lg">
+                  "Streamline your educational institution's management with our
+                  comprehensive solution."
+                </p>
+                <p className="text-sm">
+                  Register your school today and join our growing network of
+                  educational institutions.
+                </p>
+              </blockquote>
+            </div>
+          </div>
+          <div className="lg:p-8 h-full flex items-center overflow-y-auto">
+            <div className="mx-auto w-full max-w-2xl">
               <Card className="mx-auto w-full max-w-md">
                 <CardHeader>
                   <CardTitle>Welcome Back</CardTitle>
@@ -189,10 +192,10 @@ export default function AuthPage() {
                   </div>
                 </CardContent>
               </Card>
-            )}
+            </div>
           </div>
         </div>
-      </div>
+      )}
     </div>
   )
 }
