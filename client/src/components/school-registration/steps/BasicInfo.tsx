@@ -24,7 +24,7 @@ export function BasicInfo({ form }: BasicInfoProps) {
     <div className="space-y-4">
       <FormField
         control={form.control}
-        name="schoolName"
+        name="registeredName"
         render={({ field }) => (
           <FormItem>
             <FormLabel>School Name</FormLabel>

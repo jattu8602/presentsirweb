@@ -24,8 +24,6 @@ export default function AdminDashboard() {
 
   useEffect(() => {
     const token = localStorage.getItem('adminToken')
-    console.log('Checking admin token:', token ? 'Present' : 'Missing')
-
     if (!token) {
       console.log('No admin token found, redirecting to login')
       setLocation('/admin/login')
@@ -37,8 +35,6 @@ export default function AdminDashboard() {
 
   const fetchSchools = async () => {
     const token = localStorage.getItem('adminToken')
-    console.log('Fetching schools with token:', token ? 'Present' : 'Missing')
-
     try {
       const response = await fetch('/api/schools/pending', {
         headers: {
@@ -46,25 +42,19 @@ export default function AdminDashboard() {
         },
       })
 
-      console.log('Schools API response status:', response.status)
-
       if (!response.ok) {
         if (response.status === 403) {
-          console.error('Authorization failed, redirecting to login')
           localStorage.removeItem('adminToken')
           setLocation('/admin/login')
           return
         }
-        const errorData = await response.json()
-        console.error('Failed to fetch schools:', errorData)
-        throw new Error(errorData.message || 'Failed to fetch schools')
+        throw new Error('Failed to fetch schools')
       }
 
       const data = await response.json()
-      console.log('Schools fetched successfully:', data.length, 'schools')
       setSchools(data)
     } catch (error) {
-      console.error('Error in fetchSchools:', error)
+      console.error('Error fetching schools:', error)
       toast({
         title: 'Error',
         description:
@@ -80,17 +70,23 @@ export default function AdminDashboard() {
     schoolId: string,
     status: 'APPROVED' | 'REJECTED'
   ) => {
+    const token = localStorage.getItem('adminToken')
     try {
       const response = await fetch(`/api/schools/${schoolId}/approve`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          Authorization: `Bearer ${localStorage.getItem('adminToken')}`,
+          Authorization: `Bearer ${token}`,
         },
         body: JSON.stringify({ status }),
       })
 
       if (!response.ok) {
+        if (response.status === 403) {
+          localStorage.removeItem('adminToken')
+          setLocation('/admin/login')
+          return
+        }
         throw new Error('Failed to update school status')
       }
 

@@ -15,7 +15,9 @@ import { useRouter } from 'wouter'
 
 const registrationSchema = z.object({
   // Basic Info
-  schoolName: z.string().min(3, 'School name must be at least 3 characters'),
+  registeredName: z
+    .string()
+    .min(3, 'School name must be at least 3 characters'),
   registrationNumber: z
     .string()
     .min(3, 'Valid registration number is required'),
@@ -50,7 +52,7 @@ const steps = [
     title: 'Basic School Information',
     component: BasicInfo,
     fields: [
-      'schoolName',
+      'registeredName',
       'registrationNumber',
       'educationBoard',
     ] as FormField[],
@@ -153,7 +155,10 @@ export function RegistrationWizard() {
       const validationResponse = await fetch('/api/schools/validate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(data),
+        body: JSON.stringify({
+          ...data,
+          principalEmail: data.email, // Ensure principal email is set
+        }),
       })
 
       if (!validationResponse.ok) {
@@ -170,7 +175,10 @@ export function RegistrationWizard() {
       const orderResponse = await fetch('/api/schools/create-order', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(data),
+        body: JSON.stringify({
+          ...data,
+          principalEmail: data.email,
+        }),
       })
 
       if (!orderResponse.ok) {
@@ -185,7 +193,7 @@ export function RegistrationWizard() {
 
       const { orderId, amount } = await orderResponse.json()
 
-      // Save registration data to localStorage
+      // Save registration data to localStorage before payment
       localStorage.setItem('registrationData', JSON.stringify(data))
 
       // Initialize Razorpay payment
@@ -194,7 +202,7 @@ export function RegistrationWizard() {
         amount: amount,
         currency: 'INR',
         name: 'Present Sir',
-        description: 'School Registration',
+        description: `${data.institutionType} Registration - ${data.planType} Plan`,
         order_id: orderId,
         handler: async function (response: any) {
           try {
@@ -206,29 +214,35 @@ export function RegistrationWizard() {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                   ...data,
-                  paymentId: response.razorpay_payment_id,
-                  orderId: response.razorpay_order_id,
-                  signature: response.razorpay_signature,
+                  principalEmail: data.email,
+                  razorpay_payment_id: response.razorpay_payment_id,
+                  razorpay_order_id: response.razorpay_order_id,
+                  razorpay_signature: response.razorpay_signature,
                 }),
               }
             )
 
             if (!registrationResponse.ok) {
-              throw new Error('Registration failed after payment')
+              const error = await registrationResponse.json()
+              throw new Error(
+                error.message || 'Registration failed after payment'
+              )
             }
 
             // Clear localStorage
             localStorage.removeItem('registrationData')
+            localStorage.removeItem('registrationStep')
+
+            // Set success state
+            setIsSuccess(true)
 
             toast({
               title: 'Registration Successful',
               description:
                 'Your registration is complete. Please check your email for login credentials.',
             })
-
-            // Redirect to success page or login
-            setLocation('/registration-success')
           } catch (error) {
+            console.error('Registration error:', error)
             toast({
               title: 'Registration Error',
               description:
@@ -238,18 +252,40 @@ export function RegistrationWizard() {
           }
         },
         prefill: {
-          name: data.schoolName,
+          name: data.registeredName,
           email: data.email,
           contact: data.phoneNumber,
         },
         theme: {
           color: '#6366f1',
         },
+        modal: {
+          ondismiss: function () {
+            setIsSubmitting(false)
+            toast({
+              title: 'Payment Cancelled',
+              description: 'You can try again when ready',
+              variant: 'destructive',
+            })
+          },
+        },
+      }
+
+      // Load Razorpay script if not already loaded
+      if (!(window as any).Razorpay) {
+        await new Promise((resolve, reject) => {
+          const script = document.createElement('script')
+          script.src = 'https://checkout.razorpay.com/v1/checkout.js'
+          script.onload = resolve
+          script.onerror = reject
+          document.body.appendChild(script)
+        })
       }
 
       const rzp = new (window as any).Razorpay(options)
       rzp.open()
     } catch (error) {
+      console.error('Payment error:', error)
       toast({
         title: 'Error',
         description:
