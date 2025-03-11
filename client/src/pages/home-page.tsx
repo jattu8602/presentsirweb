@@ -1,6 +1,6 @@
-import { useAuth } from "@/hooks/use-auth";
-import { useQuery } from "@tanstack/react-query";
-import { motion } from "framer-motion";
+import { useAuth } from '@/hooks/use-auth'
+import { useQuery } from '@tanstack/react-query'
+import { motion } from 'framer-motion'
 import {
   Users,
   Calendar,
@@ -8,56 +8,75 @@ import {
   FileText,
   LogOut,
   BarChart,
-} from "lucide-react";
-import { Button } from "@/components/ui/button";
+} from 'lucide-react'
+import { Button } from '@/components/ui/button'
 import {
   Card,
   CardContent,
   CardDescription,
   CardHeader,
   CardTitle,
-} from "@/components/ui/card";
-import { Skeleton } from "@/components/ui/skeleton";
-import { Student, Fee, Report } from "@shared/schema";
+} from '@/components/ui/card'
+import { Skeleton } from '@/components/ui/skeleton'
+
+interface School {
+  id: string
+  registeredName: string
+  institutionType: string
+}
+
+interface Activity {
+  id: string
+  description: string
+  time: string
+  icon: any
+}
+
+interface User {
+  id: string
+  email: string
+  role: string
+  school?: School
+}
 
 const statCards = [
   {
-    title: "Total Students",
+    title: 'Total Students',
     icon: Users,
-    query: "students",
-    value: (data: Student[]) => data.length,
-    loading: "Loading students...",
+    query: 'students',
+    value: (data: any[]) => data?.length || 0,
+    loading: 'Loading students...',
   },
   {
     title: "Today's Attendance",
     icon: Calendar,
-    query: "attendance/today",
+    query: 'attendance/today',
     value: (data: { present: number; total: number }) =>
-      `${data.present}/${data.total}`,
-    loading: "Calculating attendance...",
+      `${data?.present || 0}/${data?.total || 0}`,
+    loading: 'Calculating attendance...',
   },
   {
-    title: "Pending Fees",
+    title: 'Pending Fees',
     icon: CreditCard,
-    query: "fees/pending",
-    value: (data: Fee[]) =>
-      new Intl.NumberFormat("en-US", {
-        style: "currency",
-        currency: "USD",
-      }).format(data.reduce((sum, fee) => sum + fee.amount, 0)),
-    loading: "Calculating fees...",
+    query: 'fees/pending',
+    value: (data: any[]) =>
+      new Intl.NumberFormat('en-IN', {
+        style: 'currency',
+        currency: 'INR',
+      }).format(data?.reduce((sum, fee) => sum + fee.amount, 0) || 0),
+    loading: 'Calculating fees...',
   },
   {
-    title: "Recent Reports",
+    title: 'Recent Reports',
     icon: FileText,
-    query: "reports/recent",
-    value: (data: Report[]) => data.length,
-    loading: "Loading reports...",
+    query: 'reports/recent',
+    value: (data: any[]) => data?.length || 0,
+    loading: 'Loading reports...',
   },
-];
+]
 
 export default function HomePage() {
-  const { user, logoutMutation } = useAuth();
+  const { user, logoutMutation } = useAuth()
 
   return (
     <div className="min-h-screen bg-background">
@@ -66,7 +85,7 @@ export default function HomePage() {
           <div className="flex items-center gap-4">
             <h1 className="text-2xl font-bold">Present Sir</h1>
             <span className="text-muted-foreground">
-              {user?.institutionName}
+              {(user as User)?.school?.registeredName}
             </span>
           </div>
           <Button
@@ -95,7 +114,9 @@ export default function HomePage() {
             <Card>
               <CardHeader>
                 <CardTitle>Recent Activity</CardTitle>
-                <CardDescription>Latest updates from your institution</CardDescription>
+                <CardDescription>
+                  Latest updates from your institution
+                </CardDescription>
               </CardHeader>
               <CardContent>
                 <RecentActivityList />
@@ -115,13 +136,13 @@ export default function HomePage() {
         </div>
       </main>
     </div>
-  );
+  )
 }
 
 function StatCard({ title, icon: Icon, query, value, loading }: any) {
   const { data, isLoading } = useQuery({
     queryKey: [`/api/${query}`],
-  });
+  })
 
   return (
     <motion.div
@@ -143,13 +164,13 @@ function StatCard({ title, icon: Icon, query, value, loading }: any) {
         </CardContent>
       </Card>
     </motion.div>
-  );
+  )
 }
 
 function RecentActivityList() {
-  const { data, isLoading } = useQuery({
-    queryKey: ["/api/activity/recent"],
-  });
+  const { data, isLoading } = useQuery<Activity[]>({
+    queryKey: ['/api/activity/recent'],
+  })
 
   if (isLoading) {
     return (
@@ -158,13 +179,16 @@ function RecentActivityList() {
           <Skeleton key={i} className="h-12 w-full" />
         ))}
       </div>
-    );
+    )
   }
 
   return (
     <div className="space-y-4">
-      {data?.map((activity: any, i: number) => (
-        <div key={i} className="flex items-center gap-4 p-2 rounded hover:bg-accent">
+      {data?.map((activity, i) => (
+        <div
+          key={i}
+          className="flex items-center gap-4 p-2 rounded hover:bg-accent"
+        >
           <div className="p-2 rounded-full bg-primary/10">
             <activity.icon className="h-4 w-4 text-primary" />
           </div>
@@ -175,16 +199,16 @@ function RecentActivityList() {
         </div>
       ))}
     </div>
-  );
+  )
 }
 
 function AttendanceChart() {
   const { data, isLoading } = useQuery({
-    queryKey: ["/api/attendance/trend"],
-  });
+    queryKey: ['/api/attendance/trend'],
+  })
 
   if (isLoading) {
-    return <Skeleton className="h-[200px] w-full" />;
+    return <Skeleton className="h-[200px] w-full" />
   }
 
   return (
@@ -192,5 +216,5 @@ function AttendanceChart() {
       <BarChart className="h-8 w-8 text-muted-foreground" />
       <p className="text-muted-foreground ml-2">Chart will be displayed here</p>
     </div>
-  );
+  )
 }

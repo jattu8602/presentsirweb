@@ -29,13 +29,16 @@ const schoolRegistrationSchema = z.object({
   principalName: z.string().min(3),
   principalPhone: z.string().min(10),
   institutionType: z.enum(['SCHOOL', 'COACHING', 'COLLEGE']),
+  planType: z.enum(['BASIC', 'PRO']),
+  planDuration: z.number().min(1).max(12),
 })
 
-router.post('/register', async (req, res) => {
+// Validate registration data
+router.post('/validate', async (req, res) => {
   try {
     const data = schoolRegistrationSchema.parse(req.body)
 
-    // Check if institution with same registration number or email exists
+    // Check if institution already exists
     const existingInstitution = await prisma.school.findFirst({
       where: {
         OR: [
@@ -52,23 +55,145 @@ router.post('/register', async (req, res) => {
       })
     }
 
-    // Create Razorpay order for basic plan
+    // Check if user exists
+    const existingUser = await prisma.user.findUnique({
+      where: { email: data.email },
+    })
+
+    if (existingUser) {
+      return res.status(400).json({
+        message: 'A user with this email already exists',
+      })
+    }
+
+    res.json({ valid: true })
+  } catch (error) {
+    res.status(400).json({
+      message: error instanceof Error ? error.message : 'Validation failed',
+    })
+  }
+})
+
+// Step 1: Create payment order
+router.post('/create-order', async (req, res) => {
+  try {
+    const data = schoolRegistrationSchema.parse(req.body)
+
+    // Check for existing institution/user first
+    const [existingInstitution, existingUser] = await Promise.all([
+      prisma.school.findFirst({
+        where: {
+          OR: [
+            { registrationNumber: data.registrationNumber },
+            { email: data.email },
+          ],
+        },
+      }),
+      prisma.user.findUnique({
+        where: { email: data.email },
+      }),
+    ])
+
+    if (existingInstitution) {
+      return res.status(400).json({
+        message:
+          'An institution with this registration number or email already exists',
+      })
+    }
+
+    if (existingUser) {
+      return res.status(400).json({
+        message: 'A user with this email already exists',
+      })
+    }
+
+    // Calculate amount based on plan (₹1 for testing)
+    const amount = 100 // ₹1 in paise
+
+    // Create Razorpay order
     const order = await razorpay.orders.create({
-      amount: 999900, // ₹9,999 in paise
+      amount: amount, // Fixed ₹1 amount for testing
       currency: 'INR',
       receipt: `inst_${Date.now()}`,
-      notes: {
-        institutionName: data.registeredName,
-        email: data.email,
-        type: data.institutionType,
+    })
+
+    res.status(201).json({
+      orderId: order.id,
+      amount: order.amount,
+    })
+  } catch (error) {
+    console.error('Order creation error:', error)
+    res.status(400).json({
+      message: error instanceof Error ? error.message : 'Order creation failed',
+    })
+  }
+})
+
+// Step 2: Complete registration after payment
+router.post('/complete-registration', async (req, res) => {
+  try {
+    const data = schoolRegistrationSchema.parse(req.body)
+    const { razorpay_payment_id, razorpay_order_id, razorpay_signature } =
+      req.body
+
+    // Verify payment signature
+    const sign = razorpay_order_id + '|' + razorpay_payment_id
+    const expectedSign = crypto
+      .createHmac('sha256', process.env.RAZORPAY_KEY_SECRET!)
+      .update(sign)
+      .digest('hex')
+
+    if (razorpay_signature !== expectedSign) {
+      return res.status(400).json({ message: 'Invalid payment signature' })
+    }
+
+    // Check if institution already exists
+    const existingInstitution = await prisma.school.findFirst({
+      where: {
+        OR: [
+          { registrationNumber: data.registrationNumber },
+          { email: data.email },
+        ],
       },
     })
 
-    // Generate a temporary password
+    if (existingInstitution) {
+      return res.status(400).json({
+        message:
+          'An institution with this registration number or email already exists',
+      })
+    }
+
+    // Check if user exists
+    const existingUser = await prisma.user.findUnique({
+      where: { email: data.email },
+    })
+
+    if (existingUser) {
+      return res.status(400).json({
+        message: 'A user with this email already exists',
+      })
+    }
+
+    // Generate temporary password
     const tempPassword = crypto.randomBytes(8).toString('hex')
     const hashedPassword = await bcrypt.hash(tempPassword, 10)
 
-    // Create user account with appropriate role
+    // Generate unique username
+    const baseUsername = data.registeredName.toLowerCase().replace(/\s+/g, '_')
+    let username = baseUsername
+    let counter = 1
+
+    while (true) {
+      const existingUsername = await prisma.user.findUnique({
+        where: { username },
+      })
+      if (!existingUsername) break
+      username = `${baseUsername}_${counter}`
+      counter++
+    }
+
+    // Create user account
     const userRole =
       data.institutionType === 'SCHOOL'
         ? UserRole.SCHOOL
@@ -81,7 +206,7 @@ router.post('/register', async (req, res) => {
         email: data.email,
         password: hashedPassword,
         role: userRole,
-        username: data.registeredName.toLowerCase().replace(/\s+/g, '_'),
+        username,
       },
     })
 
@@ -90,8 +215,8 @@ router.post('/register', async (req, res) => {
       data: {
         ...data,
         userId: user.id,
-        planType: PlanType.BASIC,
-        planDuration: 12, // 12 months
+        planType: data.planType,
+        planDuration: data.planDuration,
         approvalStatus: ApprovalStatus.PENDING,
       },
     })
@@ -100,21 +225,23 @@ router.post('/register', async (req, res) => {
     await prisma.payment.create({
       data: {
         schoolId: institution.id,
-        amount: 9999,
-        planType: PlanType.BASIC,
-        planDuration: 12,
-        razorpayOrderId: order.id,
+        amount: 1, // ₹1 for testing
+        planType: data.planType,
+        planDuration: data.planDuration,
+        razorpayOrderId: razorpay_order_id,
+        razorpayPaymentId: razorpay_payment_id,
+        status: 'PAID',
       },
     })
 
-    // Send email to institution with temporary credentials
+    // Send confirmation emails
     await sendEmail({
       to: data.email,
-      subject: `${data.institutionType} Registration Submitted - EduTrackPro`,
+      subject: `${data.institutionType} Registration Submitted - Present Sir`,
       text: `
         Dear ${data.principalName},
 
-        Thank you for registering ${data.registeredName} with EduTrackPro.
+        Thank you for registering ${data.registeredName} with Present Sir.
 
         Your registration is pending admin approval. You will receive another email once your registration is approved.
 
@@ -122,17 +249,15 @@ router.post('/register', async (req, res) => {
         Email: ${data.email}
         Password: ${tempPassword}
 
-        Please complete your payment using the following Razorpay order ID: ${order.id}
-
         Best regards,
-        EduTrackPro Team
+        Present Sir Team
       `,
     })
 
-    // Send email to admin
-    await sendEmail({
+    // Send email to admin (don't wait for it)
+    sendEmail({
       to: process.env.ADMIN_EMAIL!,
-      subject: `New ${data.institutionType} Registration - EduTrackPro`,
+      subject: `New ${data.institutionType} Registration - Present Sir`,
       text: `
         A new ${data.institutionType.toLowerCase()} has registered:
 
@@ -143,52 +268,15 @@ router.post('/register', async (req, res) => {
 
         Please review and approve the registration in the admin panel.
       `,
-    })
+    }).catch(console.error)
 
     res.status(201).json({
-      message: 'Registration submitted successfully',
-      orderId: order.id,
+      message: 'Registration completed successfully',
     })
   } catch (error) {
-    console.error('Institution registration error:', error)
+    console.error('Registration completion error:', error)
     res.status(400).json({
       message: error instanceof Error ? error.message : 'Registration failed',
-    })
-  }
-})
-
-// Verify Razorpay payment
-router.post('/verify-payment', async (req, res) => {
-  try {
-    const { razorpay_order_id, razorpay_payment_id, razorpay_signature } =
-      req.body
-
-    const sign = razorpay_order_id + '|' + razorpay_payment_id
-    const expectedSign = crypto
-      .createHmac('sha256', process.env.RAZORPAY_KEY_SECRET!)
-      .update(sign)
-      .digest('hex')
-
-    if (razorpay_signature !== expectedSign) {
-      return res.status(400).json({ message: 'Invalid payment signature' })
-    }
-
-    // Update payment status
-    await prisma.payment.update({
-      where: { razorpayOrderId: razorpay_order_id },
-      data: {
-        razorpayPaymentId: razorpay_payment_id,
-        status: 'PAID',
-        updatedAt: new Date(),
-      },
-    })
-
-    res.json({ message: 'Payment verified successfully' })
-  } catch (error) {
-    console.error('Payment verification error:', error)
-    res.status(400).json({
-      message:
-        error instanceof Error ? error.message : 'Payment verification failed',
     })
   }
 })
@@ -259,14 +347,47 @@ router.post('/:id/approve', authenticateToken, async (req: Request, res) => {
     }
 
     const { id } = req.params
-    const { status } = req.body
+    const { status, emailTemplate } = req.body
+
+    // Generate temporary password if approving
+    let tempPassword = ''
+    if (status === 'APPROVED') {
+      tempPassword = Math.random().toString(36).slice(-8)
+      const hashedPassword = await bcrypt.hash(tempPassword, 10)
+
+      // Update user's password
+      await prisma.user.update({
+        where: {
+          id: (await prisma.school.findUnique({ where: { id } }))?.userId,
+        },
+        data: { password: hashedPassword },
+      })
+    }
 
     const institution = await prisma.school.update({
       where: { id },
       data: {
         approvalStatus: status as ApprovalStatus,
       },
+      include: {
+        user: true,
+      },
     })
+
+    // Send email notification
+    if (emailTemplate) {
+      let emailBody = emailTemplate.body
+        .replace('{{principalName}}', institution.principalName)
+        .replace('{{schoolName}}', institution.registeredName)
+        .replace('{{email}}', institution.email)
+        .replace('{{password}}', tempPassword)
+
+      await sendEmail({
+        to: institution.email,
+        subject: emailTemplate.subject,
+        text: emailBody,
+      })
+    }
 
     res.json(institution)
   } catch (error) {

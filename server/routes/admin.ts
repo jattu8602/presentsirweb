@@ -8,6 +8,7 @@ import { isAdmin } from '../middleware/auth'
 import { authenticateToken } from '../middleware/auth'
 import { UserRole, ApprovalStatus } from '@prisma/client'
 import type { Request, Response } from 'express'
+import { generateToken } from '../lib/jwt'
 
 declare module 'express-session' {
   interface SessionData {
@@ -17,7 +18,41 @@ declare module 'express-session' {
 
 const router = Router()
 
-// Middleware to check if user is admin
+const adminLoginSchema = z.object({
+  username: z.string(),
+  password: z.string(),
+})
+
+// Admin login route (no auth required)
+router.post('/login', async (req, res) => {
+  try {
+    console.log('Login attempt received:', { username: req.body.username })
+    const { username, password } = adminLoginSchema.parse(req.body)
+
+    if (
+      username !== process.env.ADMIN_USERNAME ||
+      password !== process.env.ADMIN_PASSWORD
+    ) {
+      console.log('Invalid credentials provided')
+      return res.status(401).json({ message: 'Invalid credentials' })
+    }
+
+    const token = generateToken({
+      id: 'admin',
+      role: UserRole.ADMIN,
+    })
+
+    console.log('Login successful, token generated')
+    res.json({ token })
+  } catch (error) {
+    console.error('Admin login error:', error)
+    res.status(400).json({
+      message: error instanceof Error ? error.message : 'Login failed',
+    })
+  }
+})
+
+// Apply isAdmin middleware to all routes after this point
 router.use(isAdmin)
 
 // Admin authentication middleware
@@ -36,47 +71,6 @@ const isAdminMiddleware = async (req: any, res: any, next: any) => {
 
   next()
 }
-
-// Admin login
-router.post('/admin/login', async (req, res) => {
-  try {
-    const schema = z.object({
-      username: z.string(),
-      password: z.string(),
-    })
-
-    const { username, password } = schema.parse(req.body)
-
-    // Check against environment variables
-    const adminUsername = process.env.ADMIN_USERNAME || 'admin'
-    const adminPassword = process.env.ADMIN_PASSWORD || 'admin'
-
-    if (username !== adminUsername || password !== adminPassword) {
-      return res.status(401).json({ message: 'Invalid credentials' })
-    }
-
-    // Create or get admin user
-    let adminUser = await prisma.user.findFirst({
-      where: { role: 'ADMIN' },
-    })
-
-    if (!adminUser) {
-      adminUser = await prisma.user.create({
-        data: {
-          email: 'admin@edutrackpro.com',
-          role: 'ADMIN',
-          password: await bcrypt.hash(adminPassword, 10),
-        },
-      })
-    }
-
-    req.session.userId = adminUser.id
-    res.json({ user: adminUser })
-  } catch (error) {
-    console.error('Admin login error:', error)
-    res.status(500).json({ message: 'Internal server error' })
-  }
-})
 
 // Get admin stats
 router.get(
@@ -195,126 +189,88 @@ router.get(
   }
 )
 
-// Approve/reject school
-router.post('/admin/schools/:id/approve', isAdmin, async (req, res) => {
-  try {
-    const schema = z.object({
-      status: z.enum(['APPROVED', 'REJECTED']),
-      message: z.string().optional(),
-    })
+// Approve school
+router.post(
+  '/schools/:id/approve',
+  authenticateToken,
+  async (req: Request, res) => {
+    try {
+      const user = req.user
+      if (!user?.role || user.role !== UserRole.ADMIN) {
+        return res.status(403).json({ message: 'Unauthorized' })
+      }
 
-    const { id } = req.params
-    const { status, message } = schema.parse(req.body)
+      const { id } = req.params
 
-    const school = await prisma.school.update({
-      where: { id }, // MongoDB expects string IDs
-      data: { approvalStatus: status },
-      include: { user: true },
-    })
+      const school = await prisma.school.update({
+        where: { id },
+        data: { approvalStatus: ApprovalStatus.APPROVED },
+        include: { user: true },
+      })
 
-    if (status === 'APPROVED') {
-      // Generate temporary password
-      const tempPassword = Math.random().toString(36).slice(-8)
+      // Generate a new password
+      const newPassword = Math.random().toString(36).slice(-8)
+      const hashedPassword = await bcrypt.hash(newPassword, 10)
 
+      // Update user password
       await prisma.user.update({
         where: { id: school.userId },
-        data: { password: await bcrypt.hash(tempPassword, 10) },
+        data: { password: hashedPassword },
       })
 
       // Send approval email with credentials
       await sendEmail({
         to: school.email,
-        subject: 'School Registration Approved',
-        text: `Your school registration has been approved! You can now login with:\n\nEmail: ${school.email}\nTemporary Password: ${tempPassword}\n\nPlease change your password after logging in.`,
+        subject: 'School Registration Approved - EduTrackPro',
+        text: `
+        Dear ${school.principalName},
+
+        Your school registration for ${school.registeredName} has been approved!
+
+        You can now log in to EduTrackPro using the following credentials:
+        Email: ${school.email}
+        Password: ${newPassword}
+
+        Please change your password after your first login.
+
+        Best regards,
+        EduTrackPro Team
+      `,
       })
-    } else if (message) {
-      // Send rejection email
-      await sendEmail({
-        to: school.email,
-        subject: 'School Registration Update',
-        text: `Your school registration has been rejected.\n\nReason: ${message}`,
+
+      res.json({ message: 'School approved successfully' })
+    } catch (error) {
+      console.error('School approval error:', error)
+      res.status(400).json({
+        message: error instanceof Error ? error.message : 'Approval failed',
       })
     }
-
-    res.json(school)
-  } catch (error) {
-    console.error('Error approving/rejecting school:', error)
-    res.status(500).json({ message: 'Internal server error' })
   }
-})
+)
 
-// Approve or reject school
-router.post('/schools/:id/approve', async (req, res) => {
+// Test email route
+router.post('/test-email', async (req, res) => {
   try {
-    const { id } = req.params
-    const { status } = z
-      .object({
-        status: z.enum(['APPROVED', 'REJECTED']),
-      })
-      .parse(req.body)
-
-    const school = await prisma.school.findUnique({
-      where: { id },
-      include: {
-        user: true,
-      },
-    })
-
-    if (!school) {
-      return res.status(404).json({ message: 'School not found' })
-    }
-
-    await prisma.school.update({
-      where: { id },
-      data: { approvalStatus: status },
-    })
-
-    // Send email notification
-    const emailSubject =
-      status === 'APPROVED'
-        ? 'School Registration Approved - EduTrackPro'
-        : 'School Registration Update - EduTrackPro'
-
-    const emailText =
-      status === 'APPROVED'
-        ? `
-          Dear ${school.principalName},
-
-          Congratulations! Your school registration for ${school.registeredName} has been approved.
-
-          You can now log in to your school dashboard using:
-          Email: ${school.email}
-
-          If you haven't set up your password yet, you can use the "Forgot Password" option on the login page.
-
-          Best regards,
-          EduTrackPro Team
-        `
-        : `
-          Dear ${school.principalName},
-
-          We regret to inform you that your school registration for ${school.registeredName} could not be approved at this time.
-
-          Please contact our support team for more information.
-
-          Best regards,
-          EduTrackPro Team
-        `
-
     await sendEmail({
-      to: school.email,
-      subject: emailSubject,
-      text: emailText,
+      to: 'chaurasiyajatin68@gmail.com', // Using the email from your previous config
+      subject: 'Test Email from Present Sir',
+      text: `
+Hello!
+
+This is a test email from Present Sir using Resend.
+If you receive this, the email configuration is working correctly.
+
+Best regards,
+Present Sir Team
+      `,
     })
 
-    res.json({ message: `School ${status.toLowerCase()} successfully` })
+    res.json({ message: 'Test email sent successfully' })
   } catch (error) {
-    console.error('Error updating school status:', error)
-    res.status(400).json({
+    console.error('Test email error:', error)
+    res.status(500).json({
       message:
-        error instanceof Error
-          ? error.message
-          : 'Failed to update school status',
+        error instanceof Error ? error.message : 'Failed to send test email',
     })
   }
 })

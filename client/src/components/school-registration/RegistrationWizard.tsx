@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import * as z from 'zod'
@@ -11,14 +11,18 @@ import { PrincipalInfo } from './steps/PrincipalInfo'
 import { PaymentPlan } from './steps/PaymentPlan'
 import { useToast } from '@/hooks/use-toast'
 import { useLocation } from 'wouter'
+import { useRouter } from 'wouter'
 
 const registrationSchema = z.object({
   // Basic Info
-  schoolName: z.string().min(3, 'School name must be at least 3 characters'),
+  registeredName: z
+    .string()
+    .min(3, 'School name must be at least 3 characters'),
   registrationNumber: z
     .string()
     .min(3, 'Valid registration number is required'),
   educationBoard: z.enum(['CBSE', 'ICSE', 'STATE']),
+  institutionType: z.enum(['SCHOOL', 'COACHING', 'COLLEGE']),
 
   // Address and Contact
   streetAddress: z.string().min(5, 'Street address is required'),
@@ -48,7 +52,7 @@ const steps = [
     title: 'Basic School Information',
     component: BasicInfo,
     fields: [
-      'schoolName',
+      'registeredName',
       'registrationNumber',
       'educationBoard',
     ] as FormField[],
@@ -86,19 +90,42 @@ const steps = [
 ]
 
 export function RegistrationWizard() {
-  const [currentStep, setCurrentStep] = useState(0)
+  const [currentStep, setCurrentStep] = useState(() => {
+    const saved = localStorage.getItem('registrationStep')
+    return saved ? parseInt(saved) : 0
+  })
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const [isSuccess, setIsSuccess] = useState(false)
   const { toast } = useToast()
   const [, setLocation] = useLocation()
+  const router = useRouter()
 
   const form = useForm<RegistrationFormData>({
     resolver: zodResolver(registrationSchema),
     defaultValues: {
+      ...(() => {
+        const saved = localStorage.getItem('registrationData')
+        return saved ? JSON.parse(saved) : {}
+      })(),
       planType: 'BASIC',
       planDuration: 1,
       educationBoard: 'CBSE',
+      institutionType: 'SCHOOL',
     },
   })
+
+  // Save form data when it changes
+  useEffect(() => {
+    const subscription = form.watch((data) => {
+      localStorage.setItem('registrationData', JSON.stringify(data))
+    })
+    return () => subscription.unsubscribe()
+  }, [form.watch])
+
+  // Save current step
+  useEffect(() => {
+    localStorage.setItem('registrationStep', currentStep.toString())
+  }, [currentStep])
 
   const CurrentStepComponent = steps[currentStep].component
 
@@ -115,100 +142,173 @@ export function RegistrationWizard() {
     }
   }
 
-  const onSubmit = async (data: RegistrationFormData) => {
+  const clearRegistrationData = () => {
+    localStorage.removeItem('registrationData')
+    localStorage.removeItem('registrationStep')
+  }
+
+  const handleSubmit = async (data: z.infer<typeof registrationSchema>) => {
     try {
       setIsSubmitting(true)
-      const response = await fetch('/api/schools/register', {
+
+      // First validate the registration data
+      const validationResponse = await fetch('/api/schools/validate', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          registeredName: data.schoolName,
-          registrationNumber: data.registrationNumber,
-          educationBoard: data.educationBoard,
-          streetAddress: data.streetAddress,
-          city: data.city,
-          district: data.district,
-          state: data.state,
-          pincode: data.pincode,
-          phoneNumber: data.phoneNumber,
-          email: data.email,
-          principalName: data.principalName,
-          principalPhone: data.principalPhone,
-          principalEmail: data.principalEmail,
-          planType: data.planType,
-          planDuration: data.planDuration,
+          ...data,
+          principalEmail: data.email, // Ensure principal email is set
         }),
       })
 
-      if (!response.ok) {
-        const error = await response.json()
-        throw new Error(error.message || 'Registration failed')
+      if (!validationResponse.ok) {
+        const error = await validationResponse.json()
+        toast({
+          title: 'Registration Error',
+          description: error.message,
+          variant: 'destructive',
+        })
+        return
       }
 
-      const result = await response.json()
-
-      toast({
-        title: 'Registration Successful',
-        description: 'Please check your email for login credentials.',
+      // Create payment order
+      const orderResponse = await fetch('/api/schools/create-order', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          ...data,
+          principalEmail: data.email,
+        }),
       })
 
-      // Redirect to payment if needed
-      if (result.orderId) {
-        const options = {
-          key: process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID,
-          amount: result.amount,
-          currency: 'INR',
-          name: 'Present Sir',
-          description: `${data.planType} Plan - ${data.planDuration} Year(s)`,
-          order_id: result.orderId,
-          handler: async (response: any) => {
-            await fetch('/api/schools/verify-payment', {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json',
-              },
-              body: JSON.stringify({
-                razorpay_payment_id: response.razorpay_payment_id,
-                razorpay_order_id: response.razorpay_order_id,
-                razorpay_signature: response.razorpay_signature,
-              }),
-            })
+      if (!orderResponse.ok) {
+        const error = await orderResponse.json()
+        toast({
+          title: 'Payment Error',
+          description: error.message,
+          variant: 'destructive',
+        })
+        return
+      }
+
+      const { orderId, amount } = await orderResponse.json()
+
+      // Save registration data to localStorage before payment
+      localStorage.setItem('registrationData', JSON.stringify(data))
+
+      // Initialize Razorpay payment
+      const options = {
+        key: import.meta.env.VITE_RAZORPAY_KEY_ID,
+        amount: amount,
+        currency: 'INR',
+        name: 'Present Sir',
+        description: `${data.institutionType} Registration - ${data.planType} Plan`,
+        order_id: orderId,
+        handler: async function (response: any) {
+          try {
+            // Complete registration after payment
+            const registrationResponse = await fetch(
+              '/api/schools/complete-registration',
+              {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  ...data,
+                  principalEmail: data.email,
+                  razorpay_payment_id: response.razorpay_payment_id,
+                  razorpay_order_id: response.razorpay_order_id,
+                  razorpay_signature: response.razorpay_signature,
+                }),
+              }
+            )
+
+            if (!registrationResponse.ok) {
+              const error = await registrationResponse.json()
+              throw new Error(
+                error.message || 'Registration failed after payment'
+              )
+            }
+
+            // Clear localStorage
+            localStorage.removeItem('registrationData')
+            localStorage.removeItem('registrationStep')
+
+            // Set success state
+            setIsSuccess(true)
 
             toast({
-              title: 'Payment Successful',
-              description: 'Your registration is complete.',
+              title: 'Registration Successful',
+              description:
+                'Your registration is complete. Please check your email for login credentials.',
             })
-
-            setLocation('/auth')
+          } catch (error) {
+            console.error('Registration error:', error)
+            toast({
+              title: 'Registration Error',
+              description:
+                error instanceof Error ? error.message : 'Registration failed',
+              variant: 'destructive',
+            })
+          }
+        },
+        prefill: {
+          name: data.registeredName,
+          email: data.email,
+          contact: data.phoneNumber,
+        },
+        theme: {
+          color: '#6366f1',
+        },
+        modal: {
+          ondismiss: function () {
+            setIsSubmitting(false)
+            toast({
+              title: 'Payment Cancelled',
+              description: 'You can try again when ready',
+              variant: 'destructive',
+            })
           },
-          prefill: {
-            name: data.schoolName,
-            email: data.email,
-            contact: data.phoneNumber,
-          },
-          theme: {
-            color: '#0f172a',
-          },
-        }
-
-        const rzp = new (window as any).Razorpay(options)
-        rzp.open()
-      } else {
-        setLocation('/auth')
+        },
       }
+
+      // Load Razorpay script if not already loaded
+      if (!(window as any).Razorpay) {
+        await new Promise((resolve, reject) => {
+          const script = document.createElement('script')
+          script.src = 'https://checkout.razorpay.com/v1/checkout.js'
+          script.onload = resolve
+          script.onerror = reject
+          document.body.appendChild(script)
+        })
+      }
+
+      const rzp = new (window as any).Razorpay(options)
+      rzp.open()
     } catch (error) {
-      console.error('Registration error:', error)
+      console.error('Payment error:', error)
       toast({
-        title: 'Registration Failed',
+        title: 'Error',
         description:
-          error instanceof Error ? error.message : 'Please try again',
+          error instanceof Error ? error.message : 'Something went wrong',
         variant: 'destructive',
       })
     } finally {
       setIsSubmitting(false)
     }
+  }
+
+  if (isSuccess) {
+    return (
+      <Card className="w-full max-w-2xl mx-auto p-6 text-center">
+        <h2 className="text-2xl font-bold mb-4">Thank You for Registering!</h2>
+        <p className="text-muted-foreground mb-6">
+          Your school registration is pending admin approval. Once approved, you
+          will receive an email with your login credentials. You can then log in
+          using either your email and password or Google authentication.
+        </p>
+        <Button onClick={() => setLocation('/auth')}>Return to Login</Button>
+      </Card>
+    )
   }
 
   return (
@@ -239,7 +339,7 @@ export function RegistrationWizard() {
           </div>
         </div>
 
-        <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
+        <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-6">
           <CurrentStepComponent form={form} />
           <div className="flex justify-between mt-8">
             <Button
@@ -252,7 +352,7 @@ export function RegistrationWizard() {
             </Button>
             {currentStep === steps.length - 1 ? (
               <Button type="submit" disabled={isSubmitting}>
-                {isSubmitting ? 'Registering...' : 'Complete Registration'}
+                {isSubmitting ? 'Processing...' : 'Complete Registration'}
               </Button>
             ) : (
               <Button type="button" onClick={onNext}>

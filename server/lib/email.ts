@@ -1,12 +1,6 @@
-import nodemailer from 'nodemailer'
+import { Resend } from 'resend'
 
-const transporter = nodemailer.createTransport({
-  service: 'gmail',
-  auth: {
-    user: process.env.EMAIL_USER,
-    pass: process.env.EMAIL_PASSWORD,
-  },
-})
+const resend = new Resend(process.env.RESEND_API_KEY)
 
 interface EmailOptions {
   to: string
@@ -16,19 +10,18 @@ interface EmailOptions {
 }
 
 export async function sendEmail({ to, subject, text, html }: EmailOptions) {
-  const mailOptions = {
-    from: process.env.EMAIL_USER,
-    to,
-    subject,
-    text,
-    html,
-  }
-
   try {
-    await transporter.sendMail(mailOptions)
+    await resend.emails.send({
+      from: 'Present Sir <noreply@presentsir.com>',
+      to,
+      subject,
+      text,
+      html,
+    })
+    console.log('Email sent successfully to:', to)
   } catch (error) {
     console.error('Error sending email:', error)
-    throw new Error('Failed to send email')
+    // Don't throw error, just log it
   }
 }
 

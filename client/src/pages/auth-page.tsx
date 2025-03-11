@@ -26,7 +26,6 @@ const loginSchema = z.object({
 type LoginFormData = z.infer<typeof loginSchema>
 
 export default function AuthPage() {
-  console.log('AuthPage rendering')
   const [, setLocation] = useLocation()
   const { loginMutation } = useAuth()
   const { toast } = useToast()
@@ -70,17 +69,14 @@ export default function AuthPage() {
   const handleRegistrationClick = () => {
     console.log('Registration button clicked')
     setIsRegistering(true)
-    console.log('isRegistering set to:', true)
   }
-
-  console.log('Current isRegistering state:', isRegistering)
 
   return (
     <div className="min-h-screen bg-background">
       {isRegistering ? (
-        // Registration view: full screen layout
-        <div className="container relative min-h-screen flex items-center justify-center">
-          <div className="w-full p-4">
+        // Registration view: full screen, wider layout for a bigger appearance
+        <div className="min-h-screen bg-background flex flex-col items-center justify-center">
+          <div className="w-full max-w-6xl p-8">
             <Button
               variant="ghost"
               className="mb-4"
@@ -97,7 +93,7 @@ export default function AuthPage() {
           </div>
         </div>
       ) : (
-        // Login view: two-column layout with UI side and form
+        // Login view: two-column layout with branding on the left
         <div className="container relative min-h-screen flex-col items-center justify-center grid lg:max-w-none lg:grid-cols-2 lg:px-0">
           <div className="relative hidden h-full flex-col bg-muted p-10 text-white lg:flex dark:border-r">
             <div className="absolute inset-0 bg-zinc-900" />

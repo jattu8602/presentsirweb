@@ -24,7 +24,7 @@ export function BasicInfo({ form }: BasicInfoProps) {
     <div className="space-y-4">
       <FormField
         control={form.control}
-        name="schoolName"
+        name="registeredName"
         render={({ field }) => (
           <FormItem>
             <FormLabel>School Name</FormLabel>
@@ -72,6 +72,29 @@ export function BasicInfo({ form }: BasicInfoProps) {
                 <SelectItem value="CBSE">CBSE</SelectItem>
                 <SelectItem value="ICSE">ICSE</SelectItem>
                 <SelectItem value="STATE">State Board</SelectItem>
+              </SelectContent>
+            </Select>
+            <FormMessage />
+          </FormItem>
+        )}
+      />
+
+      <FormField
+        control={form.control}
+        name="institutionType"
+        render={({ field }) => (
+          <FormItem>
+            <FormLabel>Institution Type</FormLabel>
+            <Select onValueChange={field.onChange} defaultValue={field.value}>
+              <FormControl>
+                <SelectTrigger>
+                  <SelectValue placeholder="Select institution type" />
+                </SelectTrigger>
+              </FormControl>
+              <SelectContent>
+                <SelectItem value="SCHOOL">School</SelectItem>
+                <SelectItem value="COACHING">Coaching Institute</SelectItem>
+                <SelectItem value="COLLEGE">College</SelectItem>
               </SelectContent>
             </Select>
             <FormMessage />

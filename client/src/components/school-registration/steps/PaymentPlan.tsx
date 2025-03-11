@@ -24,7 +24,7 @@ const plans = [
   {
     type: 'BASIC',
     name: 'Basic Plan',
-    price: 9999,
+    price: 1,
     features: [
       'Basic attendance management',
       'Student profiles',

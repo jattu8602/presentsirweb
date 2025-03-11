@@ -103,25 +103,26 @@ model User {
 }
 
 model School {
-  id                    String         @id @default(auto()) @map("_id") @db.ObjectId
-  userId               String         @unique @db.ObjectId
-  user                 User           @relation(fields: [userId], references: [id])
+  id                    String           @id @default(auto()) @map("_id") @db.ObjectId
+  userId               String           @unique @db.ObjectId
+  user                 User             @relation(fields: [userId], references: [id])
   registeredName       String
-  registrationNumber   String         @unique
+  registrationNumber   String           @unique
+  institutionType      InstitutionType  @default(SCHOOL)
   streetAddress        String
   city                 String
   district            String
   state               String
   pincode             String
   phoneNumber         String
-  email               String         @unique
+  email               String           @unique
   principalName       String
   principalPhone      String
-  planType            PlanType       @default(BASIC)
-  planDuration        Int            @default(1)
-  approvalStatus      ApprovalStatus @default(PENDING)
-  createdAt           DateTime       @default(now())
-  updatedAt           DateTime       @updatedAt
+  planType            PlanType         @default(BASIC)
+  planDuration        Int              @default(1)
+  approvalStatus      ApprovalStatus   @default(PENDING)
+  createdAt           DateTime         @default(now())
+  updatedAt           DateTime         @updatedAt
   teachers            Teacher[]
   students            Student[]
   classes             Class[]
