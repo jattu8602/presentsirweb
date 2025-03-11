@@ -5,6 +5,9 @@ import { sendEmail } from '../lib/email'
 import Razorpay from 'razorpay'
 import crypto from 'crypto'
 import bcrypt from 'bcrypt'
+import { authenticateToken } from '../middleware/auth'
+import { UserRole, ApprovalStatus, PlanType } from '@prisma/client'
+import type { Request } from 'express'
 
 const router = Router()
 
@@ -25,14 +28,15 @@ const schoolRegistrationSchema = z.object({
   email: z.string().email(),
   principalName: z.string().min(3),
   principalPhone: z.string().min(10),
+  institutionType: z.enum(['SCHOOL', 'COACHING', 'COLLEGE']),
 })
 
 router.post('/register', async (req, res) => {
   try {
     const data = schoolRegistrationSchema.parse(req.body)
 
-    // Check if school with same registration number or email exists
-    const existingSchool = await prisma.school.findFirst({
+    // Check if institution with same registration number or email exists
+    const existingInstitution = await prisma.school.findFirst({
       where: {
         OR: [
           { registrationNumber: data.registrationNumber },
@@ -41,10 +45,10 @@ router.post('/register', async (req, res) => {
       },
     })
 
-    if (existingSchool) {
+    if (existingInstitution) {
       return res.status(400).json({
         message:
-          'A school with this registration number or email already exists',
+          'An institution with this registration number or email already exists',
       })
     }
 
@@ -52,10 +56,11 @@ router.post('/register', async (req, res) => {
     const order = await razorpay.orders.create({
       amount: 999900, // ₹9,999 in paise
       currency: 'INR',
-      receipt: `schl_${Date.now()}`,
+      receipt: `inst_${Date.now()}`,
       notes: {
-        schoolName: data.registeredName,
+        institutionName: data.registeredName,
         email: data.email,
+        type: data.institutionType,
       },
     })
 
@@ -63,42 +68,49 @@ router.post('/register', async (req, res) => {
     const tempPassword = crypto.randomBytes(8).toString('hex')
     const hashedPassword = await bcrypt.hash(tempPassword, 10)
 
-    // Create user account
+    // Create user account with appropriate role
+    const userRole =
+      data.institutionType === 'SCHOOL'
+        ? UserRole.SCHOOL
+        : data.institutionType === 'COACHING'
+        ? UserRole.COACHING
+        : UserRole.COLLEGE
+
     const user = await prisma.user.create({
       data: {
         email: data.email,
         password: hashedPassword,
-        role: 'SCHOOL',
+        role: userRole,
         username: data.registeredName.toLowerCase().replace(/\s+/g, '_'),
       },
     })
 
-    // Create school record
-    const school = await prisma.school.create({
+    // Create institution record
+    const institution = await prisma.school.create({
       data: {
         ...data,
         userId: user.id,
-        planType: 'BASIC',
+        planType: PlanType.BASIC,
         planDuration: 12, // 12 months
-        approvalStatus: 'PENDING',
+        approvalStatus: ApprovalStatus.PENDING,
       },
     })
 
     // Create payment record
     await prisma.payment.create({
       data: {
-        schoolId: school.id,
+        schoolId: institution.id,
         amount: 9999,
-        planType: 'BASIC',
+        planType: PlanType.BASIC,
         planDuration: 12,
         razorpayOrderId: order.id,
       },
     })
 
-    // Send email to school with temporary credentials
+    // Send email to institution with temporary credentials
     await sendEmail({
       to: data.email,
-      subject: 'School Registration Submitted - EduTrackPro',
+      subject: `${data.institutionType} Registration Submitted - EduTrackPro`,
       text: `
         Dear ${data.principalName},
 
@@ -120,11 +132,11 @@ router.post('/register', async (req, res) => {
     // Send email to admin
     await sendEmail({
       to: process.env.ADMIN_EMAIL!,
-      subject: 'New School Registration - EduTrackPro',
+      subject: `New ${data.institutionType} Registration - EduTrackPro`,
       text: `
-        A new school has registered:
+        A new ${data.institutionType.toLowerCase()} has registered:
 
-        School Name: ${data.registeredName}
+        Institution Name: ${data.registeredName}
         Registration Number: ${data.registrationNumber}
         Email: ${data.email}
         Principal: ${data.principalName}
@@ -138,7 +150,7 @@ router.post('/register', async (req, res) => {
       orderId: order.id,
     })
   } catch (error) {
-    console.error('School registration error:', error)
+    console.error('Institution registration error:', error)
     res.status(400).json({
       message: error instanceof Error ? error.message : 'Registration failed',
     })
@@ -178,6 +190,88 @@ router.post('/verify-payment', async (req, res) => {
       message:
         error instanceof Error ? error.message : 'Payment verification failed',
     })
+  }
+})
+
+// Get all institutions (admin only)
+router.get('/', authenticateToken, async (req: Request, res) => {
+  try {
+    const user = req.user
+    if (!user?.role || user.role !== UserRole.ADMIN) {
+      return res.status(403).json({ message: 'Unauthorized' })
+    }
+
+    const institutions = await prisma.school.findMany({
+      include: {
+        user: {
+          select: {
+            email: true,
+            username: true,
+            role: true,
+          },
+        },
+      },
+    })
+
+    res.json(institutions)
+  } catch (error) {
+    console.error('Error fetching institutions:', error)
+    res.status(500).json({ message: 'Internal server error' })
+  }
+})
+
+// Get pending institutions (admin only)
+router.get('/pending', authenticateToken, async (req: Request, res) => {
+  try {
+    const user = req.user
+    if (!user?.role || user.role !== UserRole.ADMIN) {
+      return res.status(403).json({ message: 'Unauthorized' })
+    }
+
+    const institutions = await prisma.school.findMany({
+      where: {
+        approvalStatus: ApprovalStatus.PENDING,
+      },
+      include: {
+        user: {
+          select: {
+            email: true,
+            username: true,
+            role: true,
+          },
+        },
+      },
+    })
+
+    res.json(institutions)
+  } catch (error) {
+    console.error('Error fetching pending institutions:', error)
+    res.status(500).json({ message: 'Internal server error' })
+  }
+})
+
+// Approve/reject institution (admin only)
+router.post('/:id/approve', authenticateToken, async (req: Request, res) => {
+  try {
+    const user = req.user
+    if (!user?.role || user.role !== UserRole.ADMIN) {
+      return res.status(403).json({ message: 'Unauthorized' })
+    }
+
+    const { id } = req.params
+    const { status } = req.body
+
+    const institution = await prisma.school.update({
+      where: { id },
+      data: {
+        approvalStatus: status as ApprovalStatus,
+      },
+    })
+
+    res.json(institution)
+  } catch (error) {
+    console.error('Error updating institution status:', error)
+    res.status(500).json({ message: 'Internal server error' })
   }
 })
 

@@ -1,38 +1,21 @@
-import { Switch, Route } from 'wouter'
-import { queryClient } from './lib/queryClient'
-import { QueryClientProvider } from '@tanstack/react-query'
-import { Toaster } from '@/components/ui/toaster'
+import { Route, Switch } from 'wouter'
 import { AuthProvider } from '@/hooks/use-auth'
-import { ProtectedRoute } from './lib/protected-route'
-import NotFound from '@/pages/not-found'
-import HomePage from '@/pages/home-page'
 import AuthPage from '@/pages/auth-page'
-import AdminAuthPage from '@/pages/admin-auth-page'
+import DashboardPage from '@/pages/dashboard-page'
 import AdminPage from '@/pages/admin-page'
 import LandingPage from '@/pages/landing-page'
+import { Toaster } from '@/components/ui/toaster'
 
-function Router() {
+export function App() {
   return (
-    <Switch>
-      <Route path="/" component={LandingPage} />
-      <Route path="/auth" component={AuthPage} />
-      <Route path="/auth/admin" component={AdminAuthPage} />
-      <ProtectedRoute path="/dashboard" component={HomePage} role="SCHOOL" />
-      <ProtectedRoute path="/admin" component={AdminPage} role="ADMIN" />
-      <Route component={NotFound} />
-    </Switch>
+    <AuthProvider>
+      <Switch>
+        <Route path="/" component={LandingPage} />
+        <Route path="/auth" component={AuthPage} />
+        <Route path="/dashboard" component={DashboardPage} />
+        <Route path="/admin" component={AdminPage} />
+      </Switch>
+      <Toaster />
+    </AuthProvider>
   )
 }
-
-function App() {
-  return (
-    <QueryClientProvider client={queryClient}>
-      <AuthProvider>
-        <Router />
-        <Toaster />
-      </AuthProvider>
-    </QueryClientProvider>
-  )
-}
-
-export default App

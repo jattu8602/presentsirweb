@@ -7,6 +7,7 @@ import schoolRoutes from './routes/school'
 import adminRoutes from './routes/admin'
 import { prisma } from './lib/prisma'
 import { Router } from 'express'
+import type { Request, Response } from 'express'
 
 const router = Router()
 

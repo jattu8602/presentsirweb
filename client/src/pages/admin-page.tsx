@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useQuery, useMutation } from '@tanstack/react-query'
 import { useAuth } from '@/hooks/use-auth'
 import { useToast } from '@/hooks/use-toast'
@@ -30,11 +30,24 @@ import {
   XCircle,
 } from 'lucide-react'
 import { apiRequest } from '@/lib/queryClient'
+import { useLocation } from 'wouter'
 
 export default function AdminPage() {
   const { toast } = useToast()
   const [selectedSchool, setSelectedSchool] = useState<any>(null)
   const [rejectionMessage, setRejectionMessage] = useState('')
+  const { user } = useAuth()
+  const [, setLocation] = useLocation()
+
+  useEffect(() => {
+    if (!user || user.role !== 'ADMIN') {
+      setLocation('/auth')
+    }
+  }, [user, setLocation])
+
+  if (!user || user.role !== 'ADMIN') {
+    return null
+  }
 
   const { data: stats } = useQuery({
     queryKey: ['/api/admin/stats'],

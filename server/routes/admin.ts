@@ -5,6 +5,9 @@ import bcrypt from 'bcrypt'
 import { sendEmail } from '../lib/email'
 import { Session } from 'express-session'
 import { isAdmin } from '../middleware/auth'
+import { authenticateToken } from '../middleware/auth'
+import { UserRole, ApprovalStatus } from '@prisma/client'
+import type { Request, Response } from 'express'
 
 declare module 'express-session' {
   interface SessionData {
@@ -75,31 +78,122 @@ router.post('/admin/login', async (req, res) => {
   }
 })
 
-// Get dashboard stats
-router.get('/admin/stats', isAdmin, async (req, res) => {
-  const [schools, pendingSchools, teachers, students] = await Promise.all([
-    prisma.school.count(),
-    prisma.school.count({ where: { approvalStatus: 'PENDING' } }),
-    prisma.teacher.count(),
-    prisma.student.count(),
-  ])
+// Get admin stats
+router.get(
+  '/stats',
+  authenticateToken,
+  async (_req: Request, res: Response) => {
+    try {
+      const [schools, students, teachers] = await Promise.all([
+        prisma.school.count(),
+        prisma.student.count(),
+        prisma.teacher.count(),
+      ])
 
-  res.json({
-    schools,
-    pendingSchools,
-    teachers,
-    students,
-  })
-})
+      res.json({
+        schools,
+        students,
+        teachers,
+      })
+    } catch (error) {
+      console.error('Error fetching admin stats:', error)
+      res.status(500).json({ message: 'Internal server error' })
+    }
+  }
+)
 
 // Get pending schools
-router.get('/admin/schools/pending', isAdmin, async (req, res) => {
-  const schools = await prisma.school.findMany({
-    where: { approvalStatus: 'PENDING' },
-    include: { user: true },
-  })
-  res.json(schools)
-})
+router.get(
+  '/schools/pending',
+  authenticateToken,
+  async (_req: Request, res: Response) => {
+    try {
+      const schools = await prisma.school.findMany({
+        where: {
+          approvalStatus: ApprovalStatus.PENDING,
+        },
+        include: {
+          user: {
+            select: {
+              email: true,
+              username: true,
+              role: true,
+            },
+          },
+        },
+      })
+
+      res.json(schools)
+    } catch (error) {
+      console.error('Error fetching pending schools:', error)
+      res.status(500).json({ message: 'Internal server error' })
+    }
+  }
+)
+
+// Get all schools
+router.get(
+  '/schools',
+  authenticateToken,
+  async (_req: Request, res: Response) => {
+    try {
+      const schools = await prisma.school.findMany({
+        include: {
+          user: {
+            select: {
+              email: true,
+              username: true,
+              role: true,
+            },
+          },
+        },
+      })
+
+      res.json(schools)
+    } catch (error) {
+      console.error('Error fetching schools:', error)
+      res.status(500).json({ message: 'Internal server error' })
+    }
+  }
+)
+
+// Get analytics
+router.get(
+  '/analytics',
+  authenticateToken,
+  async (_req: Request, res: Response) => {
+    try {
+      const [
+        totalSchools,
+        pendingSchools,
+        approvedSchools,
+        totalStudents,
+        totalTeachers,
+      ] = await Promise.all([
+        prisma.school.count(),
+        prisma.school.count({
+          where: { approvalStatus: ApprovalStatus.PENDING },
+        }),
+        prisma.school.count({
+          where: { approvalStatus: ApprovalStatus.APPROVED },
+        }),
+        prisma.student.count(),
+        prisma.teacher.count(),
+      ])
+
+      res.json({
+        totalSchools,
+        pendingSchools,
+        approvedSchools,
+        totalStudents,
+        totalTeachers,
+      })
+    } catch (error) {
+      console.error('Error fetching analytics:', error)
+      res.status(500).json({ message: 'Internal server error' })
+    }
+  }
+)
 
 // Approve/reject school
 router.post('/admin/schools/:id/approve', isAdmin, async (req, res) => {
@@ -146,58 +240,6 @@ router.post('/admin/schools/:id/approve', isAdmin, async (req, res) => {
   } catch (error) {
     console.error('Error approving/rejecting school:', error)
     res.status(500).json({ message: 'Internal server error' })
-  }
-})
-
-// Get all schools
-router.get('/schools', async (req, res) => {
-  try {
-    const schools = await prisma.school.findMany({
-      select: {
-        id: true,
-        registeredName: true,
-        registrationNumber: true,
-        email: true,
-        principalName: true,
-        approvalStatus: true,
-        createdAt: true,
-      },
-      orderBy: {
-        createdAt: 'desc',
-      },
-    })
-
-    res.json(schools)
-  } catch (error) {
-    console.error('Error fetching schools:', error)
-    res.status(500).json({ message: 'Failed to fetch schools' })
-  }
-})
-
-// Get analytics data
-router.get('/analytics', async (req, res) => {
-  try {
-    const [totalSchools, pendingApprovals, totalTeachers, totalStudents] =
-      await Promise.all([
-        prisma.school.count({
-          where: { approvalStatus: 'APPROVED' },
-        }),
-        prisma.school.count({
-          where: { approvalStatus: 'PENDING' },
-        }),
-        prisma.teacher.count(),
-        prisma.student.count(),
-      ])
-
-    res.json({
-      totalSchools,
-      pendingApprovals,
-      totalTeachers,
-      totalStudents,
-    })
-  } catch (error) {
-    console.error('Error fetching analytics:', error)
-    res.status(500).json({ message: 'Failed to fetch analytics' })
   }
 })
 

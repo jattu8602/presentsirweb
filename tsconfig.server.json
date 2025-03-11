@@ -3,14 +3,11 @@
   "compilerOptions": {
     "module": "ESNext",
     "outDir": "dist/server",
-    "target": "ES2020",
-    "lib": ["ES2020"],
-    "isolatedModules": false,
     "noEmit": false,
-    "moduleResolution": "bundler",
+    "moduleResolution": "node",
     "allowImportingTsExtensions": false,
-    "jsx": "react-jsx"
+    "types": ["node", "express"]
   },
-  "include": ["server/**/*"],
-  "exclude": ["node_modules", "client"]
+  "include": ["server/**/*", "shared/**/*", "server/types/**/*.d.ts"],
+  "exclude": ["node_modules", "dist", "client"]
 }
