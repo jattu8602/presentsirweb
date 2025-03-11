@@ -26,13 +26,14 @@ const loginSchema = z.object({
 type LoginFormData = z.infer<typeof loginSchema>
 
 export default function AuthPage() {
+  console.log('AuthPage rendering')
   const [, setLocation] = useLocation()
   const { loginMutation } = useAuth()
   const { toast } = useToast()
   const [isRegistering, setIsRegistering] = useState(false)
 
   useEffect(() => {
-    console.log('Registration state:', isRegistering)
+    console.log('Registration state changed:', isRegistering)
   }, [isRegistering])
 
   const loginForm = useForm<LoginFormData>({
@@ -69,7 +70,10 @@ export default function AuthPage() {
   const handleRegistrationClick = () => {
     console.log('Registration button clicked')
     setIsRegistering(true)
+    console.log('isRegistering set to:', true)
   }
+
+  console.log('Current isRegistering state:', isRegistering)
 
   return (
     <div className="min-h-screen bg-background">
@@ -100,11 +104,15 @@ export default function AuthPage() {
                 <Button
                   variant="ghost"
                   className="mb-4"
-                  onClick={() => setIsRegistering(false)}
+                  onClick={() => {
+                    console.log('Back to login clicked')
+                    setIsRegistering(false)
+                  }}
                 >
                   ← Back to Login
                 </Button>
-                <div className="bg-white rounded-lg shadow-sm">
+                <div className="bg-card rounded-lg shadow-sm p-6">
+                  {console.log('Rendering RegistrationWizard')}
                   <RegistrationWizard />
                 </div>
               </div>

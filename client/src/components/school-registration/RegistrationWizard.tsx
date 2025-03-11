@@ -4,6 +4,7 @@ import { zodResolver } from '@hookform/resolvers/zod'
 import * as z from 'zod'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
+import { Form } from '@/components/ui/form'
 import { BasicInfo } from './steps/BasicInfo'
 import { AddressContact } from './steps/AddressContact'
 import { PrincipalInfo } from './steps/PrincipalInfo'
@@ -39,7 +40,6 @@ const registrationSchema = z.object({
 })
 
 type RegistrationFormData = z.infer<typeof registrationSchema>
-
 type FormField = keyof RegistrationFormData
 
 const steps = [
@@ -156,7 +156,6 @@ export function RegistrationWizard() {
 
       // Redirect to payment if needed
       if (result.orderId) {
-        // Handle Razorpay payment
         const options = {
           key: process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID,
           amount: result.amount,
@@ -214,52 +213,55 @@ export function RegistrationWizard() {
 
   return (
     <Card className="w-full max-w-2xl mx-auto p-6">
-      <div className="mb-8">
-        <div className="flex justify-between mb-2">
-          {steps.map((step, index) => (
+      <Form {...form}>
+        <div className="mb-8">
+          <div className="flex justify-between mb-2">
+            {steps.map((step, index) => (
+              <div
+                key={step.id}
+                className={`flex-1 text-center ${
+                  index === currentStep
+                    ? 'text-primary'
+                    : 'text-muted-foreground'
+                }`}
+              >
+                {step.title}
+              </div>
+            ))}
+          </div>
+          <div className="h-2 bg-muted rounded-full">
             <div
-              key={step.id}
-              className={`flex-1 text-center ${
-                index === currentStep ? 'text-primary' : 'text-muted-foreground'
-              }`}
+              className="h-full bg-primary rounded-full transition-all duration-300"
+              style={{
+                width: `${((currentStep + 1) / steps.length) * 100}%`,
+              }}
+            />
+          </div>
+        </div>
+
+        <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
+          <CurrentStepComponent form={form} />
+          <div className="flex justify-between mt-8">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={onBack}
+              disabled={currentStep === 0}
             >
-              {step.title}
-            </div>
-          ))}
-        </div>
-        <div className="h-2 bg-muted rounded-full">
-          <div
-            className="h-full bg-primary rounded-full transition-all duration-300"
-            style={{
-              width: `${((currentStep + 1) / steps.length) * 100}%`,
-            }}
-          />
-        </div>
-      </div>
-
-      <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
-        <CurrentStepComponent form={form} />
-
-        <div className="flex justify-between mt-8">
-          <Button
-            type="button"
-            variant="outline"
-            onClick={onBack}
-            disabled={currentStep === 0}
-          >
-            Back
-          </Button>
-          {currentStep === steps.length - 1 ? (
-            <Button type="submit" disabled={isSubmitting}>
-              {isSubmitting ? 'Registering...' : 'Complete Registration'}
+              Back
             </Button>
-          ) : (
-            <Button type="button" onClick={onNext}>
-              Next
-            </Button>
-          )}
-        </div>
-      </form>
+            {currentStep === steps.length - 1 ? (
+              <Button type="submit" disabled={isSubmitting}>
+                {isSubmitting ? 'Registering...' : 'Complete Registration'}
+              </Button>
+            ) : (
+              <Button type="button" onClick={onNext}>
+                Next
+              </Button>
+            )}
+          </div>
+        </form>
+      </Form>
     </Card>
   )
 }
