@@ -107,12 +107,12 @@ router.post('/create-order', async (req, res) => {
       })
     }
 
-    // Calculate amount based on plan
-    const amount = data.planType === 'BASIC' ? 999900 : 1999900 // ₹9,999 or ₹19,999 in paise
+    // Calculate amount based on plan (₹1 for testing)
+    const amount = 100 // ₹1 in paise
 
     // Create Razorpay order
     const order = await razorpay.orders.create({
-      amount: amount * data.planDuration,
+      amount: amount, // Fixed ₹1 amount for testing
       currency: 'INR',
       receipt: `inst_${Date.now()}`,
     })
@@ -225,7 +225,7 @@ router.post('/complete-registration', async (req, res) => {
     await prisma.payment.create({
       data: {
         schoolId: institution.id,
-        amount: data.planType === 'BASIC' ? 9999 : 19999,
+        amount: 1, // ₹1 for testing
         planType: data.planType,
         planDuration: data.planDuration,
         razorpayOrderId: razorpay_order_id,
@@ -347,14 +347,47 @@ router.post('/:id/approve', authenticateToken, async (req: Request, res) => {
     }
 
     const { id } = req.params
-    const { status } = req.body
+    const { status, emailTemplate } = req.body
+
+    // Generate temporary password if approving
+    let tempPassword = ''
+    if (status === 'APPROVED') {
+      tempPassword = Math.random().toString(36).slice(-8)
+      const hashedPassword = await bcrypt.hash(tempPassword, 10)
+
+      // Update user's password
+      await prisma.user.update({
+        where: {
+          id: (await prisma.school.findUnique({ where: { id } }))?.userId,
+        },
+        data: { password: hashedPassword },
+      })
+    }
 
     const institution = await prisma.school.update({
       where: { id },
       data: {
         approvalStatus: status as ApprovalStatus,
       },
+      include: {
+        user: true,
+      },
     })
+
+    // Send email notification
+    if (emailTemplate) {
+      let emailBody = emailTemplate.body
+        .replace('{{principalName}}', institution.principalName)
+        .replace('{{schoolName}}', institution.registeredName)
+        .replace('{{email}}', institution.email)
+        .replace('{{password}}', tempPassword)
+
+      await sendEmail({
+        to: institution.email,
+        subject: emailTemplate.subject,
+        text: emailBody,
+      })
+    }
 
     res.json(institution)
   } catch (error) {

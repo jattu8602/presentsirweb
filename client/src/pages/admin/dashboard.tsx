@@ -78,7 +78,59 @@ export default function AdminDashboard() {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${token}`,
         },
-        body: JSON.stringify({ status }),
+        body: JSON.stringify({
+          status,
+          emailTemplate:
+            status === 'APPROVED'
+              ? {
+                  subject:
+                    'Welcome to Present Sir - Your School Registration is Approved!',
+                  body: `
+Dear {{principalName}},
+
+Great news! Your school registration for {{schoolName}} has been approved.
+
+You can now access your school management dashboard using the following credentials:
+
+Email: {{email}}
+Password: {{password}}
+
+For enhanced security, you can also log in using Google Authentication.
+
+Getting Started:
+1. Visit: http://localhost:5173/auth
+2. Log in with your email and password or use Google Sign-In
+3. We recommend changing your password after your first login
+
+Your school dashboard provides access to:
+- Attendance Management
+- Student Records
+- Fee Management
+- Performance Analytics
+- Communication Tools
+
+If you need any assistance, our support team is here to help at support@presentsir.com.
+
+Welcome to the Present Sir community!
+
+Best regards,
+Present Sir Team
+            `.trim(),
+                }
+              : {
+                  subject: 'Present Sir - School Registration Update',
+                  body: `
+Dear {{principalName}},
+
+We regret to inform you that your school registration for {{schoolName}} could not be approved at this time.
+
+If you would like to discuss this further or submit a new application, please contact our support team at support@presentsir.com.
+
+Best regards,
+Present Sir Team
+            `.trim(),
+                },
+        }),
       })
 
       if (!response.ok) {
@@ -95,7 +147,10 @@ export default function AdminDashboard() {
 
       toast({
         title: 'Success',
-        description: `School ${status.toLowerCase()} successfully`,
+        description:
+          status === 'APPROVED'
+            ? 'School approved successfully. Welcome email sent!'
+            : 'School rejected. Notification email sent.',
       })
     } catch (error) {
       toast({
