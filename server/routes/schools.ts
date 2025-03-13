@@ -176,7 +176,7 @@ router.post('/complete-registration', async (req, res) => {
     }
 
     // Generate temporary password
-    const tempPassword = crypto.randomBytes(8).toString('hex')
+    const tempPassword = crypto.randomBytes(4).toString('hex')
     const hashedPassword = await bcrypt.hash(tempPassword, 10)
 
     // Generate unique username
@@ -272,6 +272,7 @@ router.post('/complete-registration', async (req, res) => {
 
     res.status(201).json({
       message: 'Registration completed successfully',
+      password: tempPassword,
     })
   } catch (error) {
     console.error('Registration completion error:', error)
@@ -392,6 +393,40 @@ router.post('/:id/approve', authenticateToken, async (req: Request, res) => {
     res.json(institution)
   } catch (error) {
     console.error('Error updating institution status:', error)
+    res.status(500).json({ message: 'Internal server error' })
+  }
+})
+
+// Get school status (for the dashboard to check if approved)
+router.get('/status', authenticateToken, async (req: Request, res) => {
+  try {
+    const user = req.user
+    if (!user) {
+      return res.status(401).json({ message: 'Unauthorized' })
+    }
+
+    // Only school accounts can access this endpoint
+    if (
+      user.role !== UserRole.SCHOOL &&
+      user.role !== UserRole.COACHING &&
+      user.role !== UserRole.COLLEGE
+    ) {
+      return res.status(403).json({ message: 'Forbidden' })
+    }
+
+    const school = await prisma.school.findFirst({
+      where: { userId: user.id },
+    })
+
+    if (!school) {
+      return res.status(404).json({ message: 'School not found' })
+    }
+
+    res.json({
+      status: school.approvalStatus,
+    })
+  } catch (error) {
+    console.error('Error fetching school status:', error)
     res.status(500).json({ message: 'Internal server error' })
   }
 })

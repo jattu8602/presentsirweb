@@ -99,6 +99,7 @@ export function RegistrationWizard() {
   const { toast } = useToast()
   const [, setLocation] = useLocation()
   const router = useRouter()
+  const [password, setPassword] = useState<string | null>(null)
 
   const form = useForm<RegistrationFormData>({
     resolver: zodResolver(registrationSchema),
@@ -229,6 +230,13 @@ export function RegistrationWizard() {
               )
             }
 
+            const responseData = await registrationResponse.json()
+
+            // Save password for display
+            if (responseData.password) {
+              setPassword(responseData.password)
+            }
+
             // Clear localStorage
             localStorage.removeItem('registrationData')
             localStorage.removeItem('registrationStep')
@@ -301,12 +309,45 @@ export function RegistrationWizard() {
     return (
       <Card className="w-full max-w-2xl mx-auto p-6 text-center">
         <h2 className="text-2xl font-bold mb-4">Thank You for Registering!</h2>
+        {password ? (
+          <div className="mb-6 p-4 bg-muted rounded-md">
+            <h3 className="text-lg font-semibold mb-2">
+              Your Account Credentials
+            </h3>
+            <p className="mb-2">
+              Email:{' '}
+              <span className="font-medium">{form.getValues().email}</span>
+            </p>
+            <div className="flex items-center justify-center gap-2 mb-1">
+              <p>
+                Password: <span className="font-medium">{password}</span>
+              </p>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  navigator.clipboard.writeText(password)
+                  toast({
+                    title: 'Password Copied',
+                    description: 'Password has been copied to clipboard',
+                  })
+                }}
+              >
+                Copy
+              </Button>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Please save this password in a secure location. You'll need it to
+              login.
+            </p>
+          </div>
+        ) : null}
         <p className="text-muted-foreground mb-6">
           Your school registration is pending admin approval. Once approved, you
-          will receive an email with your login credentials. You can then log in
-          using either your email and password or Google authentication.
+          will be able to access all dashboard features. You can login now with
+          your credentials or using Google authentication.
         </p>
-        <Button onClick={() => setLocation('/auth')}>Return to Login</Button>
+        <Button onClick={() => setLocation('/auth')}>Go to Login</Button>
       </Card>
     )
   }
