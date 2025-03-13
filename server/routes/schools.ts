@@ -176,7 +176,10 @@ router.post('/complete-registration', async (req, res) => {
     }
 
     // Generate temporary password
-    const tempPassword = crypto.randomBytes(4).toString('hex')
+    const tempPassword = crypto.randomBytes(6).toString('hex')
+    console.log(
+      `Generated temporary password for ${data.email}: ${tempPassword} (length: ${tempPassword.length})`
+    )
     const hashedPassword = await bcrypt.hash(tempPassword, 10)
 
     // Generate unique username
@@ -273,7 +276,11 @@ router.post('/complete-registration', async (req, res) => {
     res.status(201).json({
       message: 'Registration completed successfully',
       password: tempPassword,
+      passwordLength: tempPassword.length,
     })
+    console.log(
+      `Registration completed for ${data.email} with password: ${tempPassword} (length: ${tempPassword.length})`
+    )
   } catch (error) {
     console.error('Registration completion error:', error)
     res.status(400).json({
@@ -353,7 +360,10 @@ router.post('/:id/approve', authenticateToken, async (req: Request, res) => {
     // Generate temporary password if approving
     let tempPassword = ''
     if (status === 'APPROVED') {
-      tempPassword = Math.random().toString(36).slice(-8)
+      tempPassword = crypto.randomBytes(6).toString('hex')
+      console.log(
+        `Generated approval password for institution ${id}: ${tempPassword} (length: ${tempPassword.length})`
+      )
       const hashedPassword = await bcrypt.hash(tempPassword, 10)
 
       // Update user's password
@@ -390,7 +400,11 @@ router.post('/:id/approve', authenticateToken, async (req: Request, res) => {
       })
     }
 
-    res.json(institution)
+    res.json({
+      ...institution,
+      tempPassword: status === 'APPROVED' ? tempPassword : undefined,
+      passwordLength: status === 'APPROVED' ? tempPassword.length : undefined,
+    })
   } catch (error) {
     console.error('Error updating institution status:', error)
     res.status(500).json({ message: 'Internal server error' })
