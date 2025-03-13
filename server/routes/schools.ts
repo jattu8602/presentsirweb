@@ -6,7 +6,7 @@ import Razorpay from 'razorpay'
 import crypto from 'crypto'
 import bcrypt from 'bcrypt'
 import { authenticateToken } from '../middleware/auth'
-import { UserRole, ApprovalStatus, PlanType } from '@prisma/client'
+import { UserRole, ApprovalStatus, PlanType } from '../types/enums'
 import type { Request } from 'express'
 
 const router = Router()
@@ -210,6 +210,8 @@ router.post('/complete-registration', async (req, res) => {
         password: hashedPassword,
         role: userRole,
         username,
+        createdAt: new Date(),
+        updatedAt: new Date(),
       },
     })
 
@@ -221,6 +223,8 @@ router.post('/complete-registration', async (req, res) => {
         planType: data.planType,
         planDuration: data.planDuration,
         approvalStatus: ApprovalStatus.PENDING,
+        createdAt: new Date(),
+        updatedAt: new Date(),
       },
     })
 
@@ -234,6 +238,8 @@ router.post('/complete-registration', async (req, res) => {
         razorpayOrderId: razorpay_order_id,
         razorpayPaymentId: razorpay_payment_id,
         status: 'PAID',
+        createdAt: new Date(),
+        updatedAt: new Date(),
       },
     })
 
@@ -298,15 +304,7 @@ router.get('/', authenticateToken, async (req: Request, res) => {
     }
 
     const institutions = await prisma.school.findMany({
-      include: {
-        user: {
-          select: {
-            email: true,
-            username: true,
-            role: true,
-          },
-        },
-      },
+      // Remove the user relation that doesn't exist in the schema
     })
 
     res.json(institutions)
@@ -328,15 +326,7 @@ router.get('/pending', authenticateToken, async (req: Request, res) => {
       where: {
         approvalStatus: ApprovalStatus.PENDING,
       },
-      include: {
-        user: {
-          select: {
-            email: true,
-            username: true,
-            role: true,
-          },
-        },
-      },
+      // Remove the user relation that doesn't exist in the schema
     })
 
     res.json(institutions)
@@ -366,11 +356,19 @@ router.post('/:id/approve', authenticateToken, async (req: Request, res) => {
       )
       const hashedPassword = await bcrypt.hash(tempPassword, 10)
 
+      // First get the userId from the school
+      const schoolData = await prisma.school.findUnique({
+        where: { id },
+        select: { userId: true },
+      })
+
+      if (!schoolData?.userId) {
+        return res.status(404).json({ message: 'School user not found' })
+      }
+
       // Update user's password
       await prisma.user.update({
-        where: {
-          id: (await prisma.school.findUnique({ where: { id } }))?.userId,
-        },
+        where: { id: schoolData.userId },
         data: { password: hashedPassword },
       })
     }
@@ -380,9 +378,7 @@ router.post('/:id/approve', authenticateToken, async (req: Request, res) => {
       data: {
         approvalStatus: status as ApprovalStatus,
       },
-      include: {
-        user: true,
-      },
+      // Don't include user relation since it doesn't exist
     })
 
     // Send email notification
@@ -445,4 +441,6 @@ router.get('/status', authenticateToken, async (req: Request, res) => {
   }
 })
 
+export const schoolsRouter = router
+// Keep the default export for backward compatibility
 export default router

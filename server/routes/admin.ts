@@ -1,3 +1,4 @@
+import express from 'express'
 import { Router } from 'express'
 import { prisma } from '../lib/prisma'
 import { z } from 'zod'
@@ -6,7 +7,7 @@ import { sendEmail } from '../lib/email'
 import { Session } from 'express-session'
 import { isAdmin } from '../middleware/auth'
 import { authenticateToken } from '../middleware/auth'
-import { UserRole, ApprovalStatus } from '@prisma/client'
+import { UserRole, ApprovalStatus } from '../types/enums'
 import type { Request, Response } from 'express'
 import { generateToken } from '../lib/jwt'
 
@@ -40,6 +41,7 @@ router.post('/login', async (req, res) => {
     const token = generateToken({
       id: 'admin',
       role: UserRole.ADMIN,
+      username: username,
     })
 
     console.log('Login successful, token generated')
@@ -96,57 +98,48 @@ router.get(
   }
 )
 
-// Get pending schools
+// Get all pending school approvals
 router.get(
   '/schools/pending',
   authenticateToken,
-  async (_req: Request, res: Response) => {
+  isAdmin,
+  async (req: Request, res: Response) => {
     try {
-      const schools = await prisma.school.findMany({
+      const pendingSchools = await prisma.school.findMany({
         where: {
           approvalStatus: ApprovalStatus.PENDING,
         },
-        include: {
-          user: {
-            select: {
-              email: true,
-              username: true,
-              role: true,
-            },
-          },
-        },
       })
 
-      res.json(schools)
+      return res.json(pendingSchools)
     } catch (error) {
       console.error('Error fetching pending schools:', error)
-      res.status(500).json({ message: 'Internal server error' })
+      return res
+        .status(500)
+        .json({ message: 'Failed to fetch pending schools' })
     }
   }
 )
 
-// Get all schools
+// Get all approved schools
 router.get(
-  '/schools',
+  '/schools/approved',
   authenticateToken,
-  async (_req: Request, res: Response) => {
+  isAdmin,
+  async (req: Request, res: Response) => {
     try {
-      const schools = await prisma.school.findMany({
-        include: {
-          user: {
-            select: {
-              email: true,
-              username: true,
-              role: true,
-            },
-          },
+      const approvedSchools = await prisma.school.findMany({
+        where: {
+          approvalStatus: ApprovalStatus.APPROVED,
         },
       })
 
-      res.json(schools)
+      return res.json(approvedSchools)
     } catch (error) {
-      console.error('Error fetching schools:', error)
-      res.status(500).json({ message: 'Internal server error' })
+      console.error('Error fetching approved schools:', error)
+      return res
+        .status(500)
+        .json({ message: 'Failed to fetch approved schools' })
     }
   }
 )
@@ -202,10 +195,22 @@ router.post(
 
       const { id } = req.params
 
-      const school = await prisma.school.update({
+      // Get school data first
+      const school = await prisma.school.findUnique({
         where: { id },
-        data: { approvalStatus: ApprovalStatus.APPROVED },
-        include: { user: true },
+      })
+
+      if (!school) {
+        return res.status(404).json({ message: 'School not found' })
+      }
+
+      // Update school status
+      await prisma.school.update({
+        where: { id },
+        data: {
+          approvalStatus: ApprovalStatus.APPROVED,
+          updatedAt: new Date(),
+        },
       })
 
       // Generate a new password
@@ -215,30 +220,36 @@ router.post(
       // Update user password
       await prisma.user.update({
         where: { id: school.userId },
-        data: { password: hashedPassword },
+        data: {
+          password: hashedPassword,
+          updatedAt: new Date(),
+        },
       })
 
       // Send approval email with credentials
       await sendEmail({
         to: school.email,
-        subject: 'School Registration Approved - EduTrackPro',
+        subject: 'School Registration Approved - Present Sir',
         text: `
         Dear ${school.principalName},
 
         Your school registration for ${school.registeredName} has been approved!
 
-        You can now log in to EduTrackPro using the following credentials:
+        You can now log in to Present Sir using the following credentials:
         Email: ${school.email}
         Password: ${newPassword}
 
         Please change your password after your first login.
 
         Best regards,
-        EduTrackPro Team
+        Present Sir Team
       `,
       })
 
-      res.json({ message: 'School approved successfully' })
+      res.json({
+        message: 'School approved successfully',
+        password: newPassword, // Send password back for testing
+      })
     } catch (error) {
       console.error('School approval error:', error)
       res.status(400).json({
@@ -275,4 +286,6 @@ Present Sir Team
   }
 })
 
+export const adminRouter = router
+// Keep the default export for backward compatibility
 export default router

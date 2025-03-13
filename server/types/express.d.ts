@@ -1,14 +1,18 @@
-import { UserRole } from '@prisma/client'
+import { UserRole } from '../types/enums'
 
 declare global {
   namespace Express {
-    // Extend the existing Request interface
+    // Extend the existing Request interface with a flexible user object
+    // that can accommodate any property structure
     interface Request {
       user?: {
         id: string
         email: string
-        role: UserRole
+        username?: string
+        role?: UserRole | string
+        schoolId?: string
         name?: string
+        [key: string]: any // Allow any additional properties
       }
     }
   }

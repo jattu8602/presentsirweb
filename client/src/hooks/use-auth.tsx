@@ -1,20 +1,16 @@
-import { createContext, ReactNode, useContext } from 'react'
+import { createContext, ReactNode, useContext, useEffect } from 'react'
 import { useQuery, useMutation, UseMutationResult } from '@tanstack/react-query'
-import {
-  insertUserSchema,
-  User as SelectUser,
-  InsertUser,
-} from '@shared/schema'
-import { getQueryFn, apiRequest, queryClient } from '../lib/queryClient'
-import { useToast } from '@/hooks/use-toast'
+import { useToast } from '@/components/ui/use-toast'
+import api from '@/lib/api'
 
 type UserRole = 'ADMIN' | 'SCHOOL' | 'TEACHER' | 'STUDENT'
 
 interface User {
   id: string
   email: string
-  role: string
+  role: UserRole
   name?: string
+  schoolId?: string
 }
 
 type AuthContextType = {
@@ -23,7 +19,7 @@ type AuthContextType = {
   error: Error | null
   loginMutation: UseMutationResult<LoginResponse, Error, LoginData>
   logoutMutation: UseMutationResult<void, Error, void>
-  registerMutation: UseMutationResult<User, Error, InsertUser>
+  registerMutation: UseMutationResult<RegisterResponse, Error, RegisterData>
 }
 
 interface LoginData {
@@ -32,44 +28,79 @@ interface LoginData {
 }
 
 interface LoginResponse {
+  token: string
   user: User
+}
+
+interface RegisterData {
+  name: string
+  email: string
+  password: string
+  institutionName: string
+  institutionType: string
+  phone?: string
+  address?: string
+}
+
+interface RegisterResponse {
+  message: string
+  user?: User
 }
 
 export const AuthContext = createContext<AuthContextType | null>(null)
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const { toast } = useToast()
+
+  // Check for token in localStorage
+  const getStoredToken = () => localStorage.getItem('token')
+
+  // Verify token and get user data
   const {
     data: user,
     error,
     isLoading,
-  } = useQuery<User | undefined, Error>({
-    queryKey: ['/api/user'],
-    queryFn: getQueryFn({ on401: 'returnNull' }),
+    refetch: refetchUser,
+  } = useQuery<User | null, Error>({
+    queryKey: ['currentUser'],
+    queryFn: async () => {
+      const token = getStoredToken()
+      if (!token) return null
+
+      try {
+        const response = await api.auth.verifyToken()
+        return response.user
+      } catch (error) {
+        // Clear invalid token
+        localStorage.removeItem('token')
+        return null
+      }
+    },
+    staleTime: 1000 * 60 * 5, // 5 minutes
   })
 
   const loginMutation = useMutation<LoginResponse, Error, LoginData>({
     mutationFn: async (data) => {
-      const response = await fetch('/api/auth/login', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(data),
-      })
-
-      if (!response.ok) {
-        const error = await response.json()
-        throw new Error(error.message || 'Login failed')
-      }
-
-      return response.json()
+      return api.auth.login(data.email, data.password)
     },
     onSuccess: (data) => {
-      queryClient.setQueryData(['/api/user'], data.user)
+      // Store token in localStorage
+      localStorage.setItem('token', data.token)
+
+      // Refresh user data
+      refetchUser()
+
+      // Show success toast
+      toast({
+        title: 'Login successful',
+        description: `Welcome back${
+          data.user.name ? ', ' + data.user.name : ''
+        }!`,
+      })
+
       // Redirect based on user role
       if (data.user.role === 'ADMIN') {
-        window.location.href = '/admin'
+        window.location.href = '/admin/dashboard'
       } else {
         window.location.href = '/dashboard'
       }
@@ -83,13 +114,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     },
   })
 
-  const registerMutation = useMutation({
-    mutationFn: async (credentials: InsertUser) => {
-      const res = await apiRequest('POST', '/api/register', credentials)
-      return res.json()
+  const registerMutation = useMutation<RegisterResponse, Error, RegisterData>({
+    mutationFn: async (data) => {
+      return api.auth.register(data)
     },
-    onSuccess: (user: User) => {
-      queryClient.setQueryData(['/api/user'], user)
+    onSuccess: (data) => {
+      toast({
+        title: 'Registration successful',
+        description:
+          data.message || 'Your account has been created. You can now log in.',
+      })
+
+      // Redirect to login page
+      window.location.href = '/auth'
     },
     onError: (error: Error) => {
       toast({
@@ -100,13 +137,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     },
   })
 
-  const logoutMutation = useMutation({
+  const logoutMutation = useMutation<void, Error, void>({
     mutationFn: async () => {
-      await apiRequest('POST', '/api/auth/logout')
+      // Clear token from localStorage
+      localStorage.removeItem('token')
     },
     onSuccess: () => {
-      queryClient.setQueryData(['/api/user'], null)
-      // Redirect to login page after logout
+      // Clear user data
+      refetchUser()
+
+      toast({
+        title: 'Logged out',
+        description: 'You have been successfully logged out.',
+      })
+
+      // Redirect to login page
       window.location.href = '/auth'
     },
     onError: (error: Error) => {
@@ -121,7 +166,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   return (
     <AuthContext.Provider
       value={{
-        user: user ?? null,
+        user: user || null,
         isLoading,
         error,
         loginMutation,

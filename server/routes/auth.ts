@@ -2,7 +2,7 @@ import express from 'express'
 import { compare, hash } from 'bcrypt'
 import { prisma } from '../lib/prisma'
 import { generateToken } from '../lib/jwt'
-import { UserRole } from '@prisma/client'
+import { UserRole } from '../types/enums'
 import passport from 'passport'
 import { Strategy as GoogleStrategy } from 'passport-google-oauth20'
 import { authenticateToken } from '../middleware/auth'
@@ -17,6 +17,8 @@ interface User {
   username: string | null
   password?: string
   role: UserRole
+  schoolId?: string
+  name?: string
 }
 
 // Define custom types for passport to properly handle our user structure
@@ -27,6 +29,8 @@ declare global {
       email: string
       username: string | null
       role: UserRole
+      schoolId?: string
+      name?: string
     }
   }
 }
@@ -95,8 +99,13 @@ router.get(
       return res.redirect('/auth?error=auth_failed')
     }
 
-    // Generate JWT token
-    const token = generateToken(user)
+    // Generate JWT token with specific fields
+    const token = generateToken({
+      id: user.id,
+      email: user.email,
+      role: user.role,
+      username: user.username,
+    })
 
     // Set token in cookie/session
     res.cookie('authToken', token, {
@@ -143,8 +152,14 @@ router.post('/login', async (req, res) => {
       return res.status(401).json({ message: 'Invalid credentials' })
     }
 
-    // Generate JWT token
-    const token = generateToken(user)
+    // Generate JWT token - pass the whole user object
+    // Our updated generateToken will handle the conversion
+    const token = generateToken({
+      id: user.id,
+      email: user.email,
+      role: user.role,
+      username: user.username,
+    })
 
     // Set token in cookie/session
     res.cookie('authToken', token, {
@@ -187,4 +202,31 @@ router.post('/logout', (req, res) => {
   }
 })
 
+// Verify token endpoint - added to fix login issues
+router.get('/verify', authenticateToken, (req, res) => {
+  try {
+    // If the authenticateToken middleware passes, we have a valid user
+    if (!req.user) {
+      return res.status(401).json({ message: 'Invalid or expired token' })
+    }
+
+    // Return the user info
+    return res.status(200).json({
+      user: {
+        id: req.user.id,
+        email: req.user.email,
+        role: req.user.role,
+        username: req.user.username,
+        name: req.user.username, // For backward compatibility
+        schoolId: req.user.schoolId,
+      },
+    })
+  } catch (error) {
+    console.error('Token verification error:', error)
+    return res.status(500).json({ message: 'Internal server error' })
+  }
+})
+
+export const authRouter = router
+// Keep the default export for backward compatibility
 export default router

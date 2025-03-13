@@ -1,12 +1,17 @@
 import jwt from 'jsonwebtoken'
-import { UserRole } from '@prisma/client'
+import { UserRole } from '../types/enums'
 
 interface TokenPayload {
   id: string
-  role: UserRole
+  email?: string
+  username?: string | null
+  role: UserRole | string
+  schoolId?: string
+  name?: string
+  [key: string]: any // Allow any additional properties
 }
 
-export function generateToken(payload: TokenPayload): string {
+export function generateToken(payload: Partial<TokenPayload>): string {
   return jwt.sign(
     payload,
     process.env.JWT_SECRET || process.env.SESSION_SECRET!,
