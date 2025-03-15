@@ -17,6 +17,7 @@ import {
 import { Input } from '@/components/ui/input'
 import { useToast } from '@/hooks/use-toast'
 import { RegistrationWizard } from '@/components/school-registration/RegistrationWizard'
+import { Loader2 } from 'lucide-react'
 
 const loginSchema = z.object({
   email: z.string().email('Please enter a valid email address'),
@@ -27,7 +28,7 @@ type LoginFormData = z.infer<typeof loginSchema>
 
 export default function AuthPage() {
   const [, setLocation] = useLocation()
-  const { user, isLoading, loginMutation } = useAuth()
+  const { user, isLoading, loginMutation, googleAuthUrl } = useAuth()
   const { toast } = useToast()
   const [isRegistering, setIsRegistering] = useState(false)
 
@@ -35,16 +36,12 @@ export default function AuthPage() {
   useEffect(() => {
     if (user) {
       if (user.role === 'ADMIN') {
-        setLocation('/admin')
+        setLocation('/admin/dashboard')
       } else {
         setLocation('/dashboard')
       }
     }
   }, [user, setLocation])
-
-  useEffect(() => {
-    console.log('Registration state changed:', isRegistering)
-  }, [isRegistering])
 
   const loginForm = useForm<LoginFormData>({
     resolver: zodResolver(loginSchema),
@@ -59,6 +56,7 @@ export default function AuthPage() {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <div className="text-center">
+          <Loader2 className="h-8 w-8 animate-spin mx-auto mb-4" />
           <h2 className="text-xl font-semibold mb-2">Loading...</h2>
           <p className="text-muted-foreground">Please wait</p>
         </div>
@@ -68,12 +66,7 @@ export default function AuthPage() {
 
   const onLoginSubmit = async (data: LoginFormData) => {
     try {
-      const response = await loginMutation.mutateAsync(data)
-      if (response.user.role === 'ADMIN') {
-        setLocation('/admin')
-      } else {
-        setLocation('/dashboard')
-      }
+      await loginMutation.mutateAsync(data)
     } catch (error) {
       console.error('Login error:', error)
       toast({
@@ -92,15 +85,11 @@ export default function AuthPage() {
       description: "You'll be redirected to Google to complete authentication",
     })
 
-    // Check if we're using a different host/port for the API
-    const apiUrl = import.meta.env.VITE_API_URL || ''
-
-    // Redirect to the backend Google auth endpoint
-    window.location.href = `${apiUrl}/api/auth/google`
+    // Redirect to the Google auth URL
+    window.location.href = googleAuthUrl
   }
 
   const handleRegistrationClick = () => {
-    console.log('Registration button clicked')
     setIsRegistering(true)
   }
 
@@ -113,10 +102,7 @@ export default function AuthPage() {
             <Button
               variant="ghost"
               className="mb-4"
-              onClick={() => {
-                console.log('Back to login clicked')
-                setIsRegistering(false)
-              }}
+              onClick={() => setIsRegistering(false)}
             >
               ← Back to Login
             </Button>
@@ -132,7 +118,7 @@ export default function AuthPage() {
             <div className="absolute inset-0 bg-zinc-900" />
             <div className="relative z-20 flex items-center text-lg font-medium">
               <img src="/logo.png" alt="Logo" className="h-8 w-8 mr-2" />
-              EduTrackPro
+              Present Sir
             </div>
             <div className="relative z-20 mt-auto">
               <blockquote className="space-y-2">
@@ -198,7 +184,14 @@ export default function AuthPage() {
                         className="w-full"
                         disabled={loginMutation.isPending}
                       >
-                        {loginMutation.isPending ? 'Signing in...' : 'Sign In'}
+                        {loginMutation.isPending ? (
+                          <>
+                            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                            Signing in...
+                          </>
+                        ) : (
+                          'Sign In'
+                        )}
                       </Button>
                       <Button
                         type="button"

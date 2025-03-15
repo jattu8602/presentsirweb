@@ -7,7 +7,9 @@ import crypto from 'crypto'
 import bcrypt from 'bcrypt'
 import { authenticateToken } from '../middleware/auth'
 import { UserRole, ApprovalStatus, PlanType } from '../types/enums'
+import { jsonResponse } from '../utils/serializer'
 import type { Request } from 'express'
+import type { School, Prisma } from '@prisma/client'
 
 const router = Router()
 
@@ -16,27 +18,47 @@ const razorpay = new Razorpay({
   key_secret: process.env.RAZORPAY_KEY_SECRET!,
 })
 
-const schoolRegistrationSchema = z.object({
-  registeredName: z.string().min(3),
-  registrationNumber: z.string().min(3),
-  streetAddress: z.string().min(5),
-  city: z.string().min(2),
-  district: z.string().min(2),
-  state: z.string().min(2),
-  pincode: z.string().length(6),
-  phoneNumber: z.string().min(10),
-  email: z.string().email(),
-  principalName: z.string().min(3),
-  principalPhone: z.string().min(10),
-  institutionType: z.enum(['SCHOOL', 'COACHING', 'COLLEGE']),
-  planType: z.enum(['BASIC', 'PRO']),
-  planDuration: z.number().min(1).max(12),
+// Create separate schemas for different stages
+const validationSchema = z
+  .object({
+    registeredName: z.string().min(3),
+    registrationNumber: z.string().min(3),
+    educationBoard: z.enum(['CBSE', 'ICSE', 'STATE']),
+    streetAddress: z.string().min(5),
+    city: z.string().min(2),
+    district: z.string().min(2),
+    state: z.string().min(2),
+    pincode: z.string().length(6),
+    phoneNumber: z.string().min(10),
+    email: z.string().email(),
+    principalName: z.string().min(3),
+    principalPhone: z.string().min(10),
+    institutionType: z.enum(['SCHOOL', 'COACHING', 'COLLEGE']),
+    planType: z.enum(['BASIC', 'PRO']),
+    planDuration: z
+      .number()
+      .min(1)
+      .max(12)
+      .transform((val) => BigInt(val)),
+  })
+  .required()
+
+// Separate schema for order creation that doesn't require userId
+const orderSchema = validationSchema
+
+// Complete registration schema that includes payment details but not userId
+const completeRegistrationSchema = validationSchema.extend({
+  razorpay_payment_id: z.string(),
+  razorpay_order_id: z.string(),
+  razorpay_signature: z.string(),
 })
+
+type SchoolInput = z.infer<typeof completeRegistrationSchema>
 
 // Validate registration data
 router.post('/validate', async (req, res) => {
   try {
-    const data = schoolRegistrationSchema.parse(req.body)
+    const data = validationSchema.parse(req.body)
 
     // Check if institution already exists
     const existingInstitution = await prisma.school.findFirst({
@@ -66,8 +88,13 @@ router.post('/validate', async (req, res) => {
       })
     }
 
-    res.json({ valid: true })
+    // All validations passed
+    res.json({
+      valid: true,
+      message: 'Validation successful',
+    })
   } catch (error) {
+    console.error('Validation error:', error)
     res.status(400).json({
       message: error instanceof Error ? error.message : 'Validation failed',
     })
@@ -77,7 +104,7 @@ router.post('/validate', async (req, res) => {
 // Step 1: Create payment order
 router.post('/create-order', async (req, res) => {
   try {
-    const data = schoolRegistrationSchema.parse(req.body)
+    const data = orderSchema.parse(req.body)
 
     // Check for existing institution/user first
     const [existingInstitution, existingUser] = await Promise.all([
@@ -132,9 +159,8 @@ router.post('/create-order', async (req, res) => {
 // Step 2: Complete registration after payment
 router.post('/complete-registration', async (req, res) => {
   try {
-    const data = schoolRegistrationSchema.parse(req.body)
-    const { razorpay_payment_id, razorpay_order_id, razorpay_signature } =
-      req.body
+    const data = completeRegistrationSchema.parse(req.body)
+    const { razorpay_payment_id, razorpay_order_id, razorpay_signature } = data
 
     // Verify payment signature
     const sign = razorpay_order_id + '|' + razorpay_payment_id
@@ -177,9 +203,6 @@ router.post('/complete-registration', async (req, res) => {
 
     // Generate temporary password
     const tempPassword = crypto.randomBytes(6).toString('hex')
-    console.log(
-      `Generated temporary password for ${data.email}: ${tempPassword} (length: ${tempPassword.length})`
-    )
     const hashedPassword = await bcrypt.hash(tempPassword, 10)
 
     // Generate unique username
@@ -218,8 +241,20 @@ router.post('/complete-registration', async (req, res) => {
     // Create institution record
     const institution = await prisma.school.create({
       data: {
-        ...data,
         userId: user.id,
+        registeredName: data.registeredName,
+        registrationNumber: data.registrationNumber,
+        educationBoard: data.educationBoard,
+        streetAddress: data.streetAddress,
+        city: data.city,
+        district: data.district,
+        state: data.state,
+        pincode: data.pincode,
+        phoneNumber: data.phoneNumber,
+        email: data.email,
+        principalName: data.principalName,
+        principalPhone: data.principalPhone,
+        institutionType: data.institutionType,
         planType: data.planType,
         planDuration: data.planDuration,
         approvalStatus: ApprovalStatus.PENDING,
@@ -237,58 +272,26 @@ router.post('/complete-registration', async (req, res) => {
         planDuration: data.planDuration,
         razorpayOrderId: razorpay_order_id,
         razorpayPaymentId: razorpay_payment_id,
-        status: 'PAID',
+        status: 'SUCCESS',
         createdAt: new Date(),
         updatedAt: new Date(),
       },
     })
 
-    // Send confirmation emails
+    // Send email notification
     await sendEmail({
       to: data.email,
-      subject: `${data.institutionType} Registration Submitted - Present Sir`,
-      text: `
-        Dear ${data.principalName},
-
-        Thank you for registering ${data.registeredName} with Present Sir.
-
-        Your registration is pending admin approval. You will receive another email once your registration is approved.
-
-        Temporary Login Credentials:
-        Email: ${data.email}
-        Password: ${tempPassword}
-
-        Best regards,
-        Present Sir Team
-      `,
+      subject: 'School Registration Successful',
+      text: `Thank you for registering your institution. Your login credentials are:\n\nEmail: ${data.email}\nPassword: ${tempPassword}\n\nPlease change your password after logging in.`,
     })
-
-    // Send email to admin (don't wait for it)
-    sendEmail({
-      to: process.env.ADMIN_EMAIL!,
-      subject: `New ${data.institutionType} Registration - Present Sir`,
-      text: `
-        A new ${data.institutionType.toLowerCase()} has registered:
-
-        Institution Name: ${data.registeredName}
-        Registration Number: ${data.registrationNumber}
-        Email: ${data.email}
-        Principal: ${data.principalName}
-
-        Please review and approve the registration in the admin panel.
-      `,
-    }).catch(console.error)
 
     res.status(201).json({
-      message: 'Registration completed successfully',
+      message: 'Registration successful',
       password: tempPassword,
-      passwordLength: tempPassword.length,
+      email: data.email,
     })
-    console.log(
-      `Registration completed for ${data.email} with password: ${tempPassword} (length: ${tempPassword.length})`
-    )
   } catch (error) {
-    console.error('Registration completion error:', error)
+    console.error('Registration error:', error)
     res.status(400).json({
       message: error instanceof Error ? error.message : 'Registration failed',
     })
@@ -315,95 +318,138 @@ router.get('/', authenticateToken, async (req: Request, res) => {
 })
 
 // Get pending institutions (admin only)
-router.get('/pending', authenticateToken, async (req: Request, res) => {
+router.get('/pending', authenticateToken, async (req, res) => {
   try {
-    const user = req.user
-    if (!user?.role || user.role !== UserRole.ADMIN) {
-      return res.status(403).json({ message: 'Unauthorized' })
-    }
-
-    const institutions = await prisma.school.findMany({
+    const pendingSchools = await prisma.school.findMany({
       where: {
         approvalStatus: ApprovalStatus.PENDING,
       },
-      // Remove the user relation that doesn't exist in the schema
+      select: {
+        id: true,
+        registeredName: true,
+        registrationNumber: true,
+        email: true,
+        principalName: true,
+        phoneNumber: true,
+        institutionType: true,
+        approvalStatus: true,
+        createdAt: true,
+        userId: true,
+        city: true,
+        district: true,
+        state: true,
+        pincode: true,
+        streetAddress: true,
+        principalPhone: true,
+        planType: true,
+        planDuration: true,
+      },
+      orderBy: {
+        createdAt: 'desc',
+      },
     })
 
-    res.json(institutions)
+    // Fetch associated users separately
+    const schoolUserIds = pendingSchools.map((school) => school.userId)
+    const users = await prisma.user.findMany({
+      where: {
+        id: {
+          in: schoolUserIds,
+        },
+      },
+      select: {
+        id: true,
+        email: true,
+        role: true,
+      },
+    })
+
+    // Combine school and user data
+    const schoolsWithUsers = pendingSchools.map((school) => {
+      const user = users.find((u) => u.id === school.userId)
+      return {
+        ...school,
+        user: user || null,
+      }
+    })
+
+    return jsonResponse(res, schoolsWithUsers)
   } catch (error) {
     console.error('Error fetching pending institutions:', error)
-    res.status(500).json({ message: 'Internal server error' })
+    return res.status(500).json({
+      error: 'Failed to fetch pending institutions',
+      details: error instanceof Error ? error.message : 'Unknown error',
+    })
   }
 })
 
 // Approve/reject institution (admin only)
-router.post('/:id/approve', authenticateToken, async (req: Request, res) => {
+router.post('/:id/approve', authenticateToken, async (req, res) => {
   try {
-    const user = req.user
-    if (!user?.role || user.role !== UserRole.ADMIN) {
-      return res.status(403).json({ message: 'Unauthorized' })
-    }
-
     const { id } = req.params
-    const { status, emailTemplate } = req.body
+    const { status, rejectionReason, emailTemplate } = req.body
 
-    // Generate temporary password if approving
-    let tempPassword = ''
-    if (status === 'APPROVED') {
-      tempPassword = crypto.randomBytes(6).toString('hex')
-      console.log(
-        `Generated approval password for institution ${id}: ${tempPassword} (length: ${tempPassword.length})`
-      )
-      const hashedPassword = await bcrypt.hash(tempPassword, 10)
-
-      // First get the userId from the school
-      const schoolData = await prisma.school.findUnique({
-        where: { id },
-        select: { userId: true },
-      })
-
-      if (!schoolData?.userId) {
-        return res.status(404).json({ message: 'School user not found' })
-      }
-
-      // Update user's password
-      await prisma.user.update({
-        where: { id: schoolData.userId },
-        data: { password: hashedPassword },
-      })
-    }
-
-    const institution = await prisma.school.update({
-      where: { id },
+    const updatedSchool = await prisma.school.update({
+      where: {
+        id: id,
+      },
       data: {
         approvalStatus: status as ApprovalStatus,
+        updatedAt: new Date(),
       },
-      // Don't include user relation since it doesn't exist
+      select: {
+        id: true,
+        registeredName: true,
+        email: true,
+        principalName: true,
+        approvalStatus: true,
+        userId: true,
+        city: true,
+        district: true,
+        state: true,
+        pincode: true,
+        streetAddress: true,
+        principalPhone: true,
+        planType: true,
+        planDuration: true,
+      },
     })
+
+    // Fetch the associated user
+    const user = await prisma.user.findUnique({
+      where: {
+        id: updatedSchool.userId,
+      },
+      select: {
+        email: true,
+        role: true,
+      },
+    })
+
+    const schoolWithUser = {
+      ...updatedSchool,
+      user: user || null,
+    }
 
     // Send email notification
     if (emailTemplate) {
-      let emailBody = emailTemplate.body
-        .replace('{{principalName}}', institution.principalName)
-        .replace('{{schoolName}}', institution.registeredName)
-        .replace('{{email}}', institution.email)
-        .replace('{{password}}', tempPassword)
-
       await sendEmail({
-        to: institution.email,
+        to: updatedSchool.email,
         subject: emailTemplate.subject,
-        text: emailBody,
+        text: emailTemplate.body
+          .replace('{{principalName}}', updatedSchool.principalName)
+          .replace('{{schoolName}}', updatedSchool.registeredName)
+          .replace('{{rejectionReason}}', rejectionReason || ''),
       })
     }
 
-    res.json({
-      ...institution,
-      tempPassword: status === 'APPROVED' ? tempPassword : undefined,
-      passwordLength: status === 'APPROVED' ? tempPassword.length : undefined,
-    })
+    return jsonResponse(res, schoolWithUser)
   } catch (error) {
-    console.error('Error updating institution status:', error)
-    res.status(500).json({ message: 'Internal server error' })
+    console.error('Error updating school status:', error)
+    return res.status(500).json({
+      error: 'Failed to update school status',
+      details: error instanceof Error ? error.message : 'Unknown error',
+    })
   }
 })
 
@@ -438,6 +484,52 @@ router.get('/status', authenticateToken, async (req: Request, res) => {
   } catch (error) {
     console.error('Error fetching school status:', error)
     res.status(500).json({ message: 'Internal server error' })
+  }
+})
+
+router.post('/register', authenticateToken, async (req, res) => {
+  try {
+    const { data } = req.body
+    const validatedData = completeRegistrationSchema.parse(data)
+
+    const schoolData: Prisma.SchoolUncheckedCreateInput = {
+      userId: validatedData.userId,
+      registeredName: validatedData.registeredName,
+      registrationNumber: validatedData.registrationNumber,
+      streetAddress: validatedData.streetAddress,
+      city: validatedData.city,
+      district: validatedData.district,
+      state: validatedData.state,
+      pincode: validatedData.pincode,
+      phoneNumber: validatedData.phoneNumber,
+      email: validatedData.email,
+      principalName: validatedData.principalName,
+      principalPhone: validatedData.principalPhone,
+      institutionType: validatedData.institutionType,
+      planType: validatedData.planType,
+      planDuration: validatedData.planDuration,
+      approvalStatus: ApprovalStatus.PENDING,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    }
+
+    const institution = await prisma.school.create({
+      data: schoolData,
+    })
+
+    return jsonResponse(res, institution)
+  } catch (error) {
+    if (error instanceof z.ZodError) {
+      return res.status(400).json({
+        error: 'Invalid school data',
+        details: error.errors,
+      })
+    }
+    console.error('Error creating institution:', error)
+    return res.status(500).json({
+      error: 'Failed to create institution',
+      details: error instanceof Error ? error.message : 'Unknown error',
+    })
   }
 })
 

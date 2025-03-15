@@ -1,0 +1,6 @@
+version: "2"
+tunnels:
+  app:
+    addr: 5173
+    proto: http
+    inspect: false

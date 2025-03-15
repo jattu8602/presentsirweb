@@ -157,18 +157,33 @@ export function RegistrationWizard() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          ...data,
-          principalEmail: data.email, // Ensure principal email is set
+          registeredName: data.registeredName,
+          registrationNumber: data.registrationNumber,
+          educationBoard: data.educationBoard,
+          streetAddress: data.streetAddress,
+          city: data.city,
+          district: data.district,
+          state: data.state,
+          pincode: data.pincode,
+          phoneNumber: data.phoneNumber,
+          email: data.email,
+          principalName: data.principalName,
+          principalPhone: data.principalPhone,
+          institutionType: data.institutionType,
+          planType: data.planType,
+          planDuration: data.planDuration,
         }),
       })
 
+      const validationData = await validationResponse.json()
+
       if (!validationResponse.ok) {
-        const error = await validationResponse.json()
         toast({
           title: 'Registration Error',
-          description: error.message,
+          description: validationData.message || 'Validation failed',
           variant: 'destructive',
         })
+        setIsSubmitting(false)
         return
       }
 
@@ -177,22 +192,35 @@ export function RegistrationWizard() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          ...data,
-          principalEmail: data.email,
+          registeredName: data.registeredName,
+          registrationNumber: data.registrationNumber,
+          educationBoard: data.educationBoard,
+          streetAddress: data.streetAddress,
+          city: data.city,
+          district: data.district,
+          state: data.state,
+          pincode: data.pincode,
+          phoneNumber: data.phoneNumber,
+          email: data.email,
+          principalName: data.principalName,
+          principalPhone: data.principalPhone,
+          institutionType: data.institutionType,
+          planType: data.planType,
+          planDuration: data.planDuration,
         }),
       })
 
+      const orderData = await orderResponse.json()
+
       if (!orderResponse.ok) {
-        const error = await orderResponse.json()
         toast({
           title: 'Payment Error',
-          description: error.message,
+          description: orderData.message || 'Failed to create payment order',
           variant: 'destructive',
         })
+        setIsSubmitting(false)
         return
       }
-
-      const { orderId, amount } = await orderResponse.json()
 
       // Save registration data to localStorage before payment
       localStorage.setItem('registrationData', JSON.stringify(data))
@@ -200,11 +228,11 @@ export function RegistrationWizard() {
       // Initialize Razorpay payment
       const options = {
         key: import.meta.env.VITE_RAZORPAY_KEY_ID,
-        amount: amount,
+        amount: orderData.amount,
         currency: 'INR',
         name: 'Present Sir',
         description: `${data.institutionType} Registration - ${data.planType} Plan`,
-        order_id: orderId,
+        order_id: orderData.orderId,
         handler: async function (response: any) {
           try {
             // Complete registration after payment
@@ -214,8 +242,21 @@ export function RegistrationWizard() {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                  ...data,
-                  principalEmail: data.email,
+                  registeredName: data.registeredName,
+                  registrationNumber: data.registrationNumber,
+                  educationBoard: data.educationBoard,
+                  streetAddress: data.streetAddress,
+                  city: data.city,
+                  district: data.district,
+                  state: data.state,
+                  pincode: data.pincode,
+                  phoneNumber: data.phoneNumber,
+                  email: data.email,
+                  principalName: data.principalName,
+                  principalPhone: data.principalPhone,
+                  institutionType: data.institutionType,
+                  planType: data.planType,
+                  planDuration: data.planDuration,
                   razorpay_payment_id: response.razorpay_payment_id,
                   razorpay_order_id: response.razorpay_order_id,
                   razorpay_signature: response.razorpay_signature,
@@ -223,18 +264,17 @@ export function RegistrationWizard() {
               }
             )
 
+            const registrationData = await registrationResponse.json()
+
             if (!registrationResponse.ok) {
-              const error = await registrationResponse.json()
               throw new Error(
-                error.message || 'Registration failed after payment'
+                registrationData.message || 'Registration failed after payment'
               )
             }
 
-            const responseData = await registrationResponse.json()
-
-            // Save password for display
-            if (responseData.password) {
-              setPassword(responseData.password)
+            // Save password for display if provided
+            if (registrationData.password) {
+              setPassword(registrationData.password)
             }
 
             // Clear localStorage
@@ -249,14 +289,23 @@ export function RegistrationWizard() {
               description:
                 'Your registration is complete. Please check your email for login credentials.',
             })
+
+            // Redirect to login page after a short delay
+            setTimeout(() => {
+              window.location.href = '/auth'
+            }, 3000)
           } catch (error) {
             console.error('Registration error:', error)
             toast({
-              title: 'Registration Error',
+              title: 'Registration Failed',
               description:
-                error instanceof Error ? error.message : 'Registration failed',
+                error instanceof Error
+                  ? error.message
+                  : 'An error occurred during registration',
               variant: 'destructive',
             })
+          } finally {
+            setIsSubmitting(false)
           }
         },
         prefill: {
@@ -264,43 +313,26 @@ export function RegistrationWizard() {
           email: data.email,
           contact: data.phoneNumber,
         },
-        theme: {
-          color: '#6366f1',
-        },
         modal: {
           ondismiss: function () {
             setIsSubmitting(false)
-            toast({
-              title: 'Payment Cancelled',
-              description: 'You can try again when ready',
-              variant: 'destructive',
-            })
           },
         },
       }
 
-      // Load Razorpay script if not already loaded
-      if (!(window as any).Razorpay) {
-        await new Promise((resolve, reject) => {
-          const script = document.createElement('script')
-          script.src = 'https://checkout.razorpay.com/v1/checkout.js'
-          script.onload = resolve
-          script.onerror = reject
-          document.body.appendChild(script)
-        })
-      }
-
-      const rzp = new (window as any).Razorpay(options)
+      // @ts-ignore - Razorpay is loaded via script
+      const rzp = new window.Razorpay(options)
       rzp.open()
     } catch (error) {
-      console.error('Payment error:', error)
+      console.error('Registration error:', error)
       toast({
-        title: 'Error',
+        title: 'Registration Failed',
         description:
-          error instanceof Error ? error.message : 'Something went wrong',
+          error instanceof Error
+            ? error.message
+            : 'An error occurred during registration',
         variant: 'destructive',
       })
-    } finally {
       setIsSubmitting(false)
     }
   }

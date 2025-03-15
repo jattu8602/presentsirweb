@@ -3,7 +3,13 @@ import { useQuery, useMutation, UseMutationResult } from '@tanstack/react-query'
 import { useToast } from '@/components/ui/use-toast'
 import api from '@/lib/api'
 
-type UserRole = 'ADMIN' | 'SCHOOL' | 'TEACHER' | 'STUDENT'
+type UserRole =
+  | 'ADMIN'
+  | 'SCHOOL'
+  | 'COACHING'
+  | 'COLLEGE'
+  | 'TEACHER'
+  | 'STUDENT'
 
 interface User {
   id: string
@@ -11,6 +17,7 @@ interface User {
   role: UserRole
   name?: string
   schoolId?: string
+  username?: string
 }
 
 type AuthContextType = {
@@ -20,6 +27,7 @@ type AuthContextType = {
   loginMutation: UseMutationResult<LoginResponse, Error, LoginData>
   logoutMutation: UseMutationResult<void, Error, void>
   registerMutation: UseMutationResult<RegisterResponse, Error, RegisterData>
+  googleAuthUrl: string
 }
 
 interface LoginData {
@@ -51,6 +59,10 @@ export const AuthContext = createContext<AuthContextType | null>(null)
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const { toast } = useToast()
+
+  // Get the API URL from environment variables
+  const apiUrl = import.meta.env.VITE_API_URL || ''
+  const googleAuthUrl = `${apiUrl}/api/auth/google`
 
   // Check for token in localStorage
   const getStoredToken = () => localStorage.getItem('token')
@@ -98,8 +110,38 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         }!`,
       })
 
-      // Redirect based on user role
-      if (data.user.role === 'ADMIN') {
+      // Check if school is approved before redirecting
+      if (
+        data.user.role === 'SCHOOL' ||
+        data.user.role === 'COACHING' ||
+        data.user.role === 'COLLEGE'
+      ) {
+        api.auth.checkSchoolStatus().then((response) => {
+          if (response.status === 'PENDING') {
+            toast({
+              title: 'Registration Pending',
+              description:
+                'Your registration is pending admin approval. You will be notified via email once approved.',
+              variant: 'default',
+            })
+            // Redirect to a pending approval page
+            window.location.href = '/auth/pending'
+          } else if (response.status === 'REJECTED') {
+            toast({
+              title: 'Registration Rejected',
+              description:
+                'Your registration has been rejected. Please contact support for more information.',
+              variant: 'destructive',
+            })
+            // Log them out
+            localStorage.removeItem('token')
+            window.location.href = '/auth'
+          } else {
+            // Approved - redirect to dashboard
+            window.location.href = '/dashboard'
+          }
+        })
+      } else if (data.user.role === 'ADMIN') {
         window.location.href = '/admin/dashboard'
       } else {
         window.location.href = '/dashboard'
@@ -122,7 +164,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       toast({
         title: 'Registration successful',
         description:
-          data.message || 'Your account has been created. You can now log in.',
+          data.message ||
+          'Your registration is pending admin approval. You will be notified via email once approved.',
       })
 
       // Redirect to login page
@@ -172,6 +215,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         loginMutation,
         logoutMutation,
         registerMutation,
+        googleAuthUrl,
       }}
     >
       {children}

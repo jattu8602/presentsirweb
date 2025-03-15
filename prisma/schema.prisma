@@ -71,6 +71,7 @@ model School {
   createdAt          DateTime @db.Date
   district           String
   email              String
+  educationBoard     String   @default("CBSE")
   institutionType    String
   phoneNumber        String
   pincode            String

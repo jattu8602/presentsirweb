@@ -75,6 +75,15 @@ export const authApi = {
     }),
 
   verifyToken: () => apiRequest<{ user: any }>('/api/auth/verify'),
+
+  checkSchoolStatus: () =>
+    apiRequest<{ status: string }>('/api/schools/status'),
+
+  googleCallback: (code: string) =>
+    apiRequest<{ token: string; user: any }>('/api/auth/google/callback', {
+      method: 'POST',
+      body: JSON.stringify({ code }),
+    }),
 }
 
 // Classes API

@@ -42,6 +42,15 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
+import { Textarea } from '@/components/ui/textarea'
 
 interface School {
   id: string
@@ -49,14 +58,74 @@ interface School {
   registrationNumber: string
   email: string
   principalName: string
+  phoneNumber: string
   institutionType: string
   approvalStatus: 'PENDING' | 'APPROVED' | 'REJECTED'
   createdAt: string
 }
 
+interface RejectionDialogProps {
+  school: School | null
+  isOpen: boolean
+  onClose: () => void
+  onReject: (schoolId: string, reason: string) => void
+}
+
+function RejectionDialog({
+  school,
+  isOpen,
+  onClose,
+  onReject,
+}: RejectionDialogProps) {
+  const [reason, setReason] = useState('')
+
+  const handleSubmit = () => {
+    if (school && reason.trim()) {
+      onReject(school.id, reason.trim())
+      onClose()
+    }
+  }
+
+  return (
+    <Dialog open={isOpen} onOpenChange={onClose}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Reject School Registration</DialogTitle>
+          <DialogDescription>
+            Please provide a reason for rejecting {school?.registeredName}'s
+            registration
+          </DialogDescription>
+        </DialogHeader>
+        <div className="py-4">
+          <Textarea
+            value={reason}
+            onChange={(e) => setReason(e.target.value)}
+            placeholder="Enter rejection reason..."
+            className="min-h-[100px]"
+          />
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button
+            variant="destructive"
+            onClick={handleSubmit}
+            disabled={!reason.trim()}
+          >
+            Confirm Rejection
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
 export default function AdminDashboard() {
   const [schools, setSchools] = useState<School[]>([])
   const [isLoading, setIsLoading] = useState(true)
+  const [selectedSchool, setSelectedSchool] = useState<School | null>(null)
+  const [showRejectionDialog, setShowRejectionDialog] = useState(false)
   const [stats, setStats] = useState({
     totalSchools: 0,
     pendingSchools: 0,
@@ -90,7 +159,7 @@ export default function AdminDashboard() {
     try {
       setIsLoading(true)
 
-      // Fetch schools
+      // Fetch schools with proper error handling for BigInt
       const schoolsResponse = await fetch('/api/schools/pending', {
         headers: {
           Authorization: `Bearer ${token}`,
@@ -107,7 +176,15 @@ export default function AdminDashboard() {
       }
 
       const schoolsData = await schoolsResponse.json()
-      setSchools(schoolsData)
+
+      // Convert any BigInt values to strings if necessary
+      const processedSchools = schoolsData.map((school: any) => ({
+        ...school,
+        id: String(school.id), // Convert BigInt to string if needed
+        createdAt: new Date(school.createdAt).toISOString(),
+      }))
+
+      setSchools(processedSchools)
 
       // Fetch analytics data
       const analyticsResponse = await fetch('/api/admin/analytics', {
@@ -120,15 +197,15 @@ export default function AdminDashboard() {
         const analyticsData = await analyticsResponse.json()
         setStats({
           ...stats,
-          totalSchools: analyticsData.totalSchools || 0,
-          pendingSchools: analyticsData.pendingSchools || 0,
-          approvedSchools: analyticsData.approvedSchools || 0,
-          totalStudents: analyticsData.totalStudents || 0,
-          totalTeachers: analyticsData.totalTeachers || 0,
+          totalSchools: Number(analyticsData.totalSchools) || 0,
+          pendingSchools: Number(analyticsData.pendingSchools) || 0,
+          approvedSchools: Number(analyticsData.approvedSchools) || 0,
+          totalStudents: Number(analyticsData.totalStudents) || 0,
+          totalTeachers: Number(analyticsData.totalTeachers) || 0,
           revenueThisMonth: 15800, // Placeholder for demo
           activePlan: {
-            basic: Math.floor(analyticsData.approvedSchools * 0.7) || 0, // Example calculation
-            pro: Math.floor(analyticsData.approvedSchools * 0.3) || 0,
+            basic: Math.floor(Number(analyticsData.approvedSchools) * 0.7) || 0,
+            pro: Math.floor(Number(analyticsData.approvedSchools) * 0.3) || 0,
           },
         })
       }
@@ -147,7 +224,8 @@ export default function AdminDashboard() {
 
   const handleApproval = async (
     schoolId: string,
-    status: 'APPROVED' | 'REJECTED'
+    status: 'APPROVED' | 'REJECTED',
+    rejectionReason?: string
   ) => {
     const token = localStorage.getItem('adminToken')
     try {
@@ -159,6 +237,7 @@ export default function AdminDashboard() {
         },
         body: JSON.stringify({
           status,
+          rejectionReason,
           emailTemplate:
             status === 'APPROVED'
               ? {
@@ -169,17 +248,13 @@ Dear {{principalName}},
 
 Great news! Your school registration for {{schoolName}} has been approved.
 
-You can now access your school management dashboard using the following credentials:
-
-Email: {{email}}
-Password: {{password}}
-
-For enhanced security, you can also log in using Google Authentication.
+You can now access your school management dashboard using your registered email address.
+For enhanced security, we recommend using Google Authentication to sign in.
 
 Getting Started:
 1. Visit: http://localhost:5173/auth
-2. Log in with your email and password or use Google Sign-In
-3. We recommend changing your password after your first login
+2. Log in with your email or use Google Sign-In
+3. Complete your school profile and start managing your institution
 
 Your school dashboard provides access to:
 - Attendance Management
@@ -202,6 +277,8 @@ Present Sir Team
 Dear {{principalName}},
 
 We regret to inform you that your school registration for {{schoolName}} could not be approved at this time.
+
+Reason: {{rejectionReason}}
 
 If you would like to discuss this further or submit a new application, please contact our support team at support@presentsir.com.
 
@@ -243,6 +320,15 @@ Present Sir Team
     }
   }
 
+  const handleReject = (school: School) => {
+    setSelectedSchool(school)
+    setShowRejectionDialog(true)
+  }
+
+  const handleRejectionSubmit = (schoolId: string, reason: string) => {
+    handleApproval(schoolId, 'REJECTED', reason)
+  }
+
   if (isLoading) {
     return (
       <AdminLayout>
@@ -253,74 +339,43 @@ Present Sir Team
     )
   }
 
-  // Recent activities data
-  const recentActivities = [
-    {
-      id: 1,
-      activity: 'New school registration',
-      details: 'XYZ Public School has registered',
-      time: '10 minutes ago',
-      icon: Building,
-    },
-    {
-      id: 2,
-      activity: 'School approved',
-      details: 'ABC International School was approved by admin',
-      time: '1 hour ago',
-      icon: CheckCircle2,
-    },
-    {
-      id: 3,
-      activity: 'Payment received',
-      details: 'Royal Academy paid ₹12,500 for PRO plan',
-      time: '3 hours ago',
-      icon: BadgeDollarSign,
-    },
-    {
-      id: 4,
-      activity: 'Subscription renewed',
-      details: 'Little Stars School renewed PRO plan for 12 months',
-      time: 'Yesterday',
-      icon: FileCheck,
-    },
-  ]
-
   return (
     <AdminLayout>
       <div className="space-y-6">
-        <div className="flex justify-between items-center">
-          <h1 className="text-3xl font-bold">Admin Dashboard</h1>
+        <div className="flex items-center justify-between">
+          <div>
+            <h2 className="text-2xl font-bold tracking-tight">
+              Admin Dashboard
+            </h2>
+            <p className="text-muted-foreground">
+              Manage school registrations and monitor system analytics
+            </p>
+          </div>
           <Select value={timeFilter} onValueChange={setTimeFilter}>
             <SelectTrigger className="w-[180px]">
-              <SelectValue placeholder="Time Period" />
+              <SelectValue placeholder="Select time range" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="today">Today</SelectItem>
-              <SelectItem value="week">This Week</SelectItem>
-              <SelectItem value="month">This Month</SelectItem>
-              <SelectItem value="year">This Year</SelectItem>
+              <SelectItem value="week">Last 7 days</SelectItem>
+              <SelectItem value="month">Last 30 days</SelectItem>
+              <SelectItem value="year">Last 12 months</SelectItem>
             </SelectContent>
           </Select>
         </div>
 
-        {/* Quick stats */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium">
                 Total Schools
               </CardTitle>
-              <School className="h-5 w-5 text-muted-foreground" />
+              <School className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold">{stats.totalSchools}</div>
-              <div className="text-xs text-muted-foreground flex items-center mt-1">
-                <span className="flex items-center text-green-500">
-                  <ArrowUpRight className="h-3 w-3 mr-1" />
-                  +5.2%
-                </span>
-                <span className="ml-1">from last {timeFilter}</span>
-              </div>
+              <p className="text-xs text-muted-foreground">
+                {stats.pendingSchools} pending approval
+              </p>
             </CardContent>
           </Card>
 
@@ -329,17 +384,13 @@ Present Sir Team
               <CardTitle className="text-sm font-medium">
                 Total Students
               </CardTitle>
-              <GraduationCap className="h-5 w-5 text-muted-foreground" />
+              <Users className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold">{stats.totalStudents}</div>
-              <div className="text-xs text-muted-foreground flex items-center mt-1">
-                <span className="flex items-center text-green-500">
-                  <ArrowUpRight className="h-3 w-3 mr-1" />
-                  +12.5%
-                </span>
-                <span className="ml-1">from last {timeFilter}</span>
-              </div>
+              <p className="text-xs text-muted-foreground">
+                Across all institutions
+              </p>
             </CardContent>
           </Card>
 
@@ -348,247 +399,141 @@ Present Sir Team
               <CardTitle className="text-sm font-medium">
                 Total Teachers
               </CardTitle>
-              <Users className="h-5 w-5 text-muted-foreground" />
+              <GraduationCap className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold">{stats.totalTeachers}</div>
-              <div className="text-xs text-muted-foreground flex items-center mt-1">
-                <span className="flex items-center text-green-500">
-                  <ArrowUpRight className="h-3 w-3 mr-1" />
-                  +7.8%
-                </span>
-                <span className="ml-1">from last {timeFilter}</span>
-              </div>
+              <p className="text-xs text-muted-foreground">
+                Active faculty members
+              </p>
             </CardContent>
           </Card>
 
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Revenue</CardTitle>
-              <BadgeDollarSign className="h-5 w-5 text-muted-foreground" />
+              <CardTitle className="text-sm font-medium">
+                Revenue This Month
+              </CardTitle>
+              <BadgeDollarSign className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold">
                 ₹{stats.revenueThisMonth.toLocaleString()}
               </div>
-              <div className="text-xs text-muted-foreground flex items-center mt-1">
-                <span className="flex items-center text-green-500">
-                  <ArrowUpRight className="h-3 w-3 mr-1" />
-                  {stats.revenueTrend}
-                </span>
-                <span className="ml-1">from last {timeFilter}</span>
-              </div>
+              <p className="text-xs text-muted-foreground">
+                <span className="text-green-500">↑ {stats.revenueTrend}</span>{' '}
+                from last month
+              </p>
             </CardContent>
           </Card>
         </div>
 
-        {/* Charts */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <Card className="md:col-span-2">
-            <CardHeader>
-              <CardTitle>School Registrations</CardTitle>
-              <CardDescription>Registration trend over time</CardDescription>
-            </CardHeader>
-            <CardContent className="h-80">
-              <div className="flex items-center justify-center h-full border border-dashed rounded-md">
-                <div className="text-center">
-                  <BarChart className="h-10 w-10 mx-auto mb-2 text-gray-400" />
-                  <p className="text-muted-foreground">Registration Chart</p>
-                </div>
+        <Card>
+          <CardHeader>
+            <CardTitle>Pending School Approvals</CardTitle>
+            <CardDescription>
+              Review and manage new school registration requests
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            {schools.length === 0 ? (
+              <div className="text-center py-6">
+                <Building className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+                <h3 className="text-lg font-semibold mb-2">
+                  No Pending Approvals
+                </h3>
+                <p className="text-muted-foreground">
+                  All school registration requests have been processed
+                </p>
               </div>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader>
-              <CardTitle>Schools by Plan</CardTitle>
-              <CardDescription>Distribution of active plans</CardDescription>
-            </CardHeader>
-            <CardContent className="h-80">
-              <div className="flex flex-col justify-between h-full">
-                <div className="space-y-6">
-                  <div>
-                    <div className="flex items-center justify-between mb-1">
-                      <div className="text-sm font-medium">Basic Plan</div>
-                      <div className="text-sm font-medium">
-                        {stats.activePlan.basic} schools
-                      </div>
-                    </div>
-                    <div className="bg-gray-200 rounded-full h-2 w-full">
-                      <div
-                        className="bg-blue-600 h-2 rounded-full"
-                        style={{
-                          width: `${
-                            (stats.activePlan.basic /
-                              (stats.activePlan.basic + stats.activePlan.pro)) *
-                            100
-                          }%`,
-                        }}
-                      />
-                    </div>
-                  </div>
-                  <div>
-                    <div className="flex items-center justify-between mb-1">
-                      <div className="text-sm font-medium">Pro Plan</div>
-                      <div className="text-sm font-medium">
-                        {stats.activePlan.pro} schools
-                      </div>
-                    </div>
-                    <div className="bg-gray-200 rounded-full h-2 w-full">
-                      <div
-                        className="bg-indigo-600 h-2 rounded-full"
-                        style={{
-                          width: `${
-                            (stats.activePlan.pro /
-                              (stats.activePlan.basic + stats.activePlan.pro)) *
-                            100
-                          }%`,
-                        }}
-                      />
-                    </div>
-                  </div>
-                </div>
-
-                <div>
-                  <h3 className="text-lg font-medium mb-4">Approval Status</h3>
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="bg-white p-4 rounded-lg border shadow-sm text-center">
-                      <div className="text-2xl font-bold">
-                        {stats.pendingSchools}
-                      </div>
-                      <div className="text-xs text-muted-foreground">
-                        Pending
-                      </div>
-                    </div>
-                    <div className="bg-white p-4 rounded-lg border shadow-sm text-center">
-                      <div className="text-2xl font-bold">
-                        {stats.approvedSchools}
-                      </div>
-                      <div className="text-xs text-muted-foreground">
-                        Approved
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
-
-        {/* Pending approvals and activities */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <Card className="md:col-span-2">
-            <CardHeader>
-              <CardTitle>Pending Approvals</CardTitle>
-              <CardDescription>
-                Schools waiting for your approval
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              {schools.length === 0 ? (
-                <div className="text-center py-6 text-muted-foreground">
-                  No pending schools to approve
-                </div>
-              ) : (
-                <div className="overflow-x-auto">
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>School Name</TableHead>
-                        <TableHead>Type</TableHead>
-                        <TableHead>Principal</TableHead>
-                        <TableHead>Date</TableHead>
-                        <TableHead>Action</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {schools.slice(0, 5).map((school) => (
-                        <TableRow key={school.id}>
-                          <TableCell className="font-medium">
-                            {school.registeredName}
-                          </TableCell>
-                          <TableCell>
-                            <Badge variant="outline">
-                              {school.institutionType}
-                            </Badge>
-                          </TableCell>
-                          <TableCell>{school.principalName}</TableCell>
-                          <TableCell>
-                            {new Date(school.createdAt).toLocaleDateString()}
-                          </TableCell>
-                          <TableCell>
-                            <div className="flex space-x-2">
-                              <Button
-                                size="sm"
-                                variant="default"
-                                onClick={() =>
-                                  handleApproval(school.id, 'APPROVED')
-                                }
-                              >
-                                <CheckCircle2 className="h-4 w-4 mr-1" />
-                                Approve
-                              </Button>
-                              <Button
-                                size="sm"
-                                variant="destructive"
-                                onClick={() =>
-                                  handleApproval(school.id, 'REJECTED')
-                                }
-                              >
-                                <XCircle className="h-4 w-4 mr-1" />
-                                Reject
-                              </Button>
-                            </div>
-                          </TableCell>
-                        </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
-                </div>
-              )}
-              {schools.length > 5 && (
-                <div className="flex justify-center mt-4">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setLocation('/admin/schools/pending')}
-                  >
-                    View All Pending Schools
-                  </Button>
-                </div>
-              )}
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader>
-              <CardTitle>Recent Activities</CardTitle>
-              <CardDescription>Latest actions in the system</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-5">
-                {recentActivities.map((activity) => (
-                  <div key={activity.id} className="flex">
-                    <div className="mr-3 flex h-9 w-9 items-center justify-center rounded-full bg-gray-100">
-                      <activity.icon className="h-5 w-5 text-gray-600" />
-                    </div>
-                    <div>
-                      <p className="text-sm font-medium">{activity.activity}</p>
-                      <p className="text-xs text-muted-foreground">
-                        {activity.details}
-                      </p>
-                      <p className="text-xs text-muted-foreground flex items-center mt-1">
-                        <Clock className="h-3 w-3 mr-1" />
-                        {activity.time}
-                      </p>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </CardContent>
-          </Card>
-        </div>
+            ) : (
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>School Name</TableHead>
+                    <TableHead>Registration Number</TableHead>
+                    <TableHead>Principal</TableHead>
+                    <TableHead>Type</TableHead>
+                    <TableHead>Contact</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead>Actions</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {schools.map((school) => (
+                    <TableRow key={school.id}>
+                      <TableCell className="font-medium">
+                        {school.registeredName}
+                      </TableCell>
+                      <TableCell>{school.registrationNumber}</TableCell>
+                      <TableCell>{school.principalName}</TableCell>
+                      <TableCell>
+                        <Badge variant="outline">
+                          {school.institutionType}
+                        </Badge>
+                      </TableCell>
+                      <TableCell>
+                        <div className="text-sm">
+                          <div>{school.email}</div>
+                          <div className="text-muted-foreground">
+                            {school.phoneNumber}
+                          </div>
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        <Badge
+                          variant={
+                            school.approvalStatus === 'PENDING'
+                              ? 'outline'
+                              : school.approvalStatus === 'APPROVED'
+                              ? 'default'
+                              : 'destructive'
+                          }
+                        >
+                          {school.approvalStatus}
+                        </Badge>
+                      </TableCell>
+                      <TableCell>
+                        <div className="flex space-x-2">
+                          <Button
+                            size="sm"
+                            className="h-8"
+                            onClick={() =>
+                              handleApproval(school.id, 'APPROVED')
+                            }
+                          >
+                            <CheckCircle2 className="h-4 w-4 mr-1" />
+                            Approve
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="destructive"
+                            className="h-8"
+                            onClick={() => handleReject(school)}
+                          >
+                            <XCircle className="h-4 w-4 mr-1" />
+                            Reject
+                          </Button>
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            )}
+          </CardContent>
+        </Card>
       </div>
+
+      <RejectionDialog
+        school={selectedSchool}
+        isOpen={showRejectionDialog}
+        onClose={() => {
+          setShowRejectionDialog(false)
+          setSelectedSchool(null)
+        }}
+        onReject={handleRejectionSubmit}
+      />
     </AdminLayout>
   )
 }

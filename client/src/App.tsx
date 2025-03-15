@@ -14,6 +14,7 @@ import SubscriptionsPage from '@/pages/subscriptions-page'
 import AboutPage from '@/pages/about-page'
 import NotFound from '@/pages/not-found'
 import AuthRedirect from '@/pages/auth-redirect'
+import PendingApprovalPage from '@/pages/auth/pending'
 import { Toaster } from '@/components/ui/toaster'
 import { useAuth } from '@/hooks/use-auth'
 import { useEffect } from 'react'
@@ -61,6 +62,7 @@ export default function App() {
           <Route path="/landing" component={LandingPage} />
           <Route path="/auth" component={AuthPage} />
           <Route path="/auth/redirect" component={AuthRedirect} />
+          <Route path="/auth/pending" component={PendingApprovalPage} />
 
           {/* Admin routes */}
           <Route path="/admin/login" component={AdminAuthPage} />
