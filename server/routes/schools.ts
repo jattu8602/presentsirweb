@@ -1,13 +1,13 @@
 import { Router } from 'express'
 import { z } from 'zod'
-import { prisma } from '../lib/prisma'
-import { sendEmail } from '../lib/email'
+import { prisma } from '../lib/prisma.js'
+import { sendEmail } from '../lib/email.js'
 import Razorpay from 'razorpay'
 import crypto from 'crypto'
 import bcrypt from 'bcrypt'
-import { authenticateToken } from '../middleware/auth'
-import { UserRole, ApprovalStatus, PlanType } from '../types/enums'
-import { jsonResponse } from '../utils/serializer'
+import { authenticateToken } from '../middleware/auth.js'
+import { UserRole, ApprovalStatus, PlanType } from '../types/enums.js'
+import { jsonResponse } from '../utils/serializer.js'
 import type { Request } from 'express'
 import type { School, Prisma } from '@prisma/client'
 
@@ -35,11 +35,7 @@ const validationSchema = z
     principalPhone: z.string().min(10),
     institutionType: z.enum(['SCHOOL', 'COACHING', 'COLLEGE']),
     planType: z.enum(['BASIC', 'PRO']),
-    planDuration: z
-      .number()
-      .min(1)
-      .max(12)
-      .transform((val) => BigInt(val)),
+    planDuration: z.number().min(1).max(12),
   })
   .required()
 
@@ -256,7 +252,7 @@ router.post('/complete-registration', async (req, res) => {
         principalPhone: data.principalPhone,
         institutionType: data.institutionType,
         planType: data.planType,
-        planDuration: data.planDuration,
+        planDuration: Number(data.planDuration),
         approvalStatus: ApprovalStatus.PENDING,
         createdAt: new Date(),
         updatedAt: new Date(),

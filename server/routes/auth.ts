@@ -1,12 +1,20 @@
 import express from 'express'
 import { compare, hash } from 'bcrypt'
-import { prisma } from '../lib/prisma'
-import { generateToken } from '../lib/jwt'
-import { UserRole } from '../types/enums'
+import { prisma } from '../lib/prisma.js'
+import { generateToken } from '../lib/jwt.js'
+import { UserRole } from '../types/enums.js'
 import passport from 'passport'
-import { Strategy as GoogleStrategy } from 'passport-google-oauth20'
-import { authenticateToken } from '../middleware/auth'
+import { Strategy as GoogleStrategy, Profile } from 'passport-google-oauth20'
+import { authenticateToken } from '../middleware/auth.js'
 import type { Request, Response } from 'express'
+import type { Session } from 'express-session'
+
+// Extend Session type to include our custom properties
+declare module 'express-session' {
+  interface SessionData {
+    oauthState?: string
+  }
+}
 
 const router = express.Router()
 
@@ -41,40 +49,81 @@ passport.use(
     {
       clientID: process.env.GOOGLE_CLIENT_ID!,
       clientSecret: process.env.GOOGLE_CLIENT_SECRET!,
-      callbackURL: `${process.env.FRONTEND_URL}/api/auth/google/callback`,
+      callbackURL: `${process.env.API_URL}/api/auth/google/callback`,
       scope: ['profile', 'email'],
     },
     async (
       accessToken: string,
       refreshToken: string,
-      profile: any,
+      profile: Profile,
       done: any
     ) => {
       try {
-        // Find user by email
-        const email = profile.emails?.[0]?.value
-        if (!email) {
+        console.log('Google profile:', profile)
+
+        if (!profile.emails?.[0]?.value) {
+          console.error('No email found in Google profile')
           return done(new Error('No email found in Google profile'))
         }
 
+        const email = profile.emails[0].value
+        console.log('Processing Google login for email:', email)
+
+        // Generate a unique username from email, ensure it's not undefined
+        const username = email.split('@')[0] || email
+
+        // First try to find the user
         let user = await prisma.user.findUnique({
           where: { email },
         })
 
         if (!user) {
-          // No user found with this email - can't automatically register
-          return done(null, false)
+          // If user doesn't exist, create a new one
+          try {
+            user = await prisma.user.create({
+              data: {
+                email,
+                username,
+                password: '',
+                role: 'SCHOOL' as UserRole,
+                createdAt: new Date(),
+                updatedAt: new Date(),
+              },
+            })
+            console.log('Created new user:', user)
+          } catch (createError: any) {
+            // If username is taken, append random numbers until we find a unique one
+            if (createError.code === 'P2002') {
+              let counter = 1
+              while (true) {
+                try {
+                  user = await prisma.user.create({
+                    data: {
+                      email,
+                      username: `${username}${counter}`,
+                      password: '',
+                      role: 'SCHOOL' as UserRole,
+                      createdAt: new Date(),
+                      updatedAt: new Date(),
+                    },
+                  })
+                  break
+                } catch (retryError: any) {
+                  if (retryError.code !== 'P2002') throw retryError
+                  counter++
+                }
+              }
+            } else {
+              throw createError
+            }
+          }
         }
 
-        // User exists, return the user (we don't need to update anything)
-        return done(null, {
-          id: user.id,
-          email: user.email,
-          username: user.username,
-          role: user.role,
-        })
+        console.log('User after operation:', user)
+        return done(null, user)
       } catch (error) {
-        return done(error as Error)
+        console.error('Google auth error:', error)
+        return done(error)
       }
     }
   )
@@ -84,40 +133,84 @@ passport.use(
 router.use(passport.initialize())
 
 // Google Auth Routes
-router.get(
-  '/google',
-  passport.authenticate('google', { scope: ['profile', 'email'] })
-)
+router.get('/google', (req, res, next) => {
+  // Generate a random state parameter for CSRF protection
+  const state = Math.random().toString(36).substring(7)
 
-router.get(
-  '/google/callback',
-  passport.authenticate('google', { session: false, failureRedirect: '/auth' }),
-  (req, res) => {
-    const user = req.user as User
-
-    if (!user) {
-      return res.redirect('/auth?error=auth_failed')
+  // Store state in session
+  req.session.oauthState = state
+  req.session.save((err) => {
+    if (err) {
+      console.error('Error saving session:', err)
+      return res.redirect(
+        `${process.env.FRONTEND_URL}/auth?error=session-error`
+      )
     }
 
-    // Generate JWT token with specific fields
-    const token = generateToken({
-      id: user.id,
-      email: user.email,
-      role: user.role,
-      username: user.username,
-    })
+    // Proceed with Google authentication
+    passport.authenticate('google', {
+      scope: ['profile', 'email'],
+      state: state,
+    })(req, res, next)
+  })
+})
 
-    // Set token in cookie/session
-    res.cookie('authToken', token, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
-    })
+router.get('/google/callback', (req, res, next) => {
+  console.log('Received Google callback')
+  // Verify state parameter
+  const state = req.query.state as string | undefined
+  const storedState = req.session.oauthState
 
-    // Redirect to frontend with success
-    res.redirect(`${process.env.FRONTEND_URL}/auth/redirect`)
+  console.log('State verification:', {
+    receivedState: state,
+    storedState: storedState,
+    sessionData: req.session,
+  })
+
+  // Skip state verification if both are undefined (fallback for compatibility)
+  const stateValid =
+    (!state && !storedState) || (state && storedState && state === storedState)
+
+  if (!stateValid) {
+    console.error('Invalid state parameter', { state, storedState })
+    return res.redirect(`${process.env.FRONTEND_URL}/auth?error=invalid-state`)
   }
-)
+
+  // Clear stored state
+  delete req.session.oauthState
+
+  passport.authenticate('google', { session: false, failureRedirect: '/auth' })(
+    req,
+    res,
+    () => {
+      const user = req.user as User
+
+      if (!user) {
+        return res.redirect('/auth?error=auth_failed')
+      }
+
+      // Generate JWT token with specific fields
+      const token = generateToken({
+        id: user.id,
+        email: user.email,
+        role: user.role,
+        username: user.username,
+      })
+
+      // Set token in cookie/session
+      res.cookie('authToken', token, {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === 'production',
+        maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days,
+        sameSite: 'lax',
+        path: '/',
+      })
+
+      // Redirect to frontend pending auth page
+      res.redirect(`${process.env.FRONTEND_URL}/auth/pending`)
+    }
+  )
+})
 
 router.post('/login', async (req, res) => {
   try {

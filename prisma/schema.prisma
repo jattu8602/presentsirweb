@@ -3,79 +3,124 @@ generator client {
 }
 
 datasource db {
-  provider = "mongodb"
+  provider = "postgresql"
   url      = env("DATABASE_URL")
 }
 
 model Account {
-  id                String @id @default(auto()) @map("_id") @db.ObjectId
-  /// Field referred in an index, but found no data to define the type.
-  provider          Json?
-  /// Field referred in an index, but found no data to define the type.
-  providerAccountId Json?
+  id                String  @id @default(uuid())
+  provider          String
+  providerAccountId String
+  userId            String
+  user              User    @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([provider, providerAccountId])
 }
 
 model Attendance {
-  id String @id @default(auto()) @map("_id") @db.ObjectId
+  id        String   @id @default(uuid())
+  date      DateTime
+  status    String
+  studentId String
+  classId   String
+  student   Student  @relation(fields: [studentId], references: [id])
+  class     Class    @relation(fields: [classId], references: [id])
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 
 model AttendanceRecord {
-  id String @id @default(auto()) @map("_id") @db.ObjectId
+  id        String   @id @default(uuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 
 model Class {
-  id String @id @default(auto()) @map("_id") @db.ObjectId
+  id             String           @id @default(uuid())
+  name           String
+  schoolId       String
+  school         School           @relation(fields: [schoolId], references: [id])
+  teachers       TeacherOnClass[]
+  students       Student[]
+  attendances    Attendance[]
+  timetableEntry TimetableEntry[]
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
 }
 
 model Fee {
-  id String @id @default(auto()) @map("_id") @db.ObjectId
+  id          String      @id @default(uuid())
+  amount      Float
+  dueDate     DateTime
+  status      String
+  studentId   String
+  student     Student     @relation(fields: [studentId], references: [id])
+  feeRecords  FeeRecord[]
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
 }
 
 model FeeRecord {
-  id String @id @default(auto()) @map("_id") @db.ObjectId
+  id        String   @id @default(uuid())
+  amount    Float
+  feeId     String
+  fee       Fee      @relation(fields: [feeId], references: [id])
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 
 model Invoice {
-  id            String @id @default(auto()) @map("_id") @db.ObjectId
-  /// Field referred in an index, but found no data to define the type.
-  invoiceNumber Json?  @unique
+  id            String   @id @default(uuid())
+  invoiceNumber String   @unique
+  amount        Float
+  status        String
+  schoolId      String
+  school        School   @relation(fields: [schoolId], references: [id])
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
 }
 
 model Mark {
-  id String @id @default(auto()) @map("_id") @db.ObjectId
+  id        String   @id @default(uuid())
+  score     Float
+  examName  String
+  studentId String
+  student   Student  @relation(fields: [studentId], references: [id])
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 
 model Payment {
-  id                String   @id @default(auto()) @map("_id") @db.ObjectId
+  id                String   @id @default(uuid())
   amount            Float
-  createdAt         DateTime @db.Date
-  planDuration      BigInt
+  planDuration      Int
   planType          String
   razorpayOrderId   String   @unique
   razorpayPaymentId String   @unique
-  schoolId          String   @db.ObjectId
+  schoolId          String
+  school            School   @relation(fields: [schoolId], references: [id])
   status            String
-  updatedAt         DateTime @db.Date
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
 }
 
 model Report {
-  id String @id @default(auto()) @map("_id") @db.ObjectId
+  id        String   @id @default(uuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 
 model School {
-  id                 String   @id @default(auto()) @map("_id") @db.ObjectId
+  id                 String           @id @default(uuid())
   approvalStatus     String
   city               String
-  createdAt          DateTime @db.Date
   district           String
   email              String
-  educationBoard     String   @default("CBSE")
+  educationBoard     String          @default("CBSE")
   institutionType    String
   phoneNumber        String
   pincode            String
-  planDuration       BigInt
+  planDuration       Int
   planType           String
   principalName      String
   principalPhone     String
@@ -83,68 +128,116 @@ model School {
   registrationNumber String
   state              String
   streetAddress      String
-  updatedAt          DateTime @db.Date
-  userId             String   @unique @db.ObjectId
+  userId             String          @unique
+  user              User             @relation(fields: [userId], references: [id])
+  classes           Class[]
+  teachers          Teacher[]
+  invoices          Invoice[]
+  payments          Payment[]
+  subscriptions     Subscription[]
+  createdAt         DateTime         @default(now())
+  updatedAt         DateTime         @updatedAt
 }
 
 model Session {
-  id           String @id @default(auto()) @map("_id") @db.ObjectId
-  /// Field referred in an index, but found no data to define the type.
-  sessionToken Json?  @unique
+  id           String   @id @default(uuid())
+  sessionToken String   @unique
+  userId       String
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expires      DateTime
 }
 
 model Student {
-  id     String @id @default(auto()) @map("_id") @db.ObjectId
-  /// Field referred in an index, but found no data to define the type.
-  userId Json?  @unique
+  id          String       @id @default(uuid())
+  name        String
+  rollNumber  String
+  classId     String
+  userId      String       @unique
+  user        User         @relation(fields: [userId], references: [id])
+  class       Class        @relation(fields: [classId], references: [id])
+  attendances Attendance[]
+  fees        Fee[]
+  marks       Mark[]
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
 }
 
 model Subscription {
-  id String @id @default(auto()) @map("_id") @db.ObjectId
+  id        String   @id @default(uuid())
+  planName  String
+  status    String
+  schoolId  String
+  school    School   @relation(fields: [schoolId], references: [id])
+  startDate DateTime
+  endDate   DateTime
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 
 model Teacher {
-  id       String @id @default(auto()) @map("_id") @db.ObjectId
-  /// Field referred in an index, but found no data to define the type.
-  email    Json?
-  /// Field referred in an index, but found no data to define the type.
-  schoolId Json?
-  /// Field referred in an index, but found no data to define the type.
-  userId   Json?  @unique
+  id              String           @id @default(uuid())
+  name            String
+  email           String
+  schoolId        String
+  userId          String          @unique
+  user            User            @relation(fields: [userId], references: [id])
+  school          School          @relation(fields: [schoolId], references: [id])
+  classes         TeacherOnClass[]
+  timetableEntries TimetableEntry[]
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
 
   @@unique([email, schoolId])
 }
 
 model TeacherOnClass {
-  id        String @id @default(auto()) @map("_id") @db.ObjectId
-  /// Field referred in an index, but found no data to define the type.
-  classId   Json?
-  /// Field referred in an index, but found no data to define the type.
-  teacherId Json?
+  id        String   @id @default(uuid())
+  teacherId String
+  classId   String
+  teacher   Teacher  @relation(fields: [teacherId], references: [id])
+  class     Class    @relation(fields: [classId], references: [id])
+  subject   String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@unique([teacherId, classId])
 }
 
 model TimetableEntry {
-  id String @id @default(auto()) @map("_id") @db.ObjectId
+  id           String   @id @default(uuid())
+  day          String
+  startTime    String
+  endTime      String
+  subject      String
+  classId      String
+  teacherId    String?
+  class        Class    @relation(fields: [classId], references: [id])
+  teacher      Teacher? @relation(fields: [teacherId], references: [id])
+  periodNumber Int
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
 }
 
 model User {
-  id        String   @id @default(auto()) @map("_id") @db.ObjectId
-  createdAt DateTime @db.Date
-  email     String   @unique
-  password  String
-  role      String
-  updatedAt DateTime @db.Date
-  username  String   @unique
+  id            String    @id @default(uuid())
+  email         String    @unique
+  username      String    @unique
+  password      String
+  role          String
+  accounts      Account[]
+  sessions      Session[]
+  school        School?
+  student       Student?
+  teacher       Teacher?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
 }
 
 model VerificationToken {
-  id         String @id @default(auto()) @map("_id") @db.ObjectId
-  /// Field referred in an index, but found no data to define the type.
-  identifier Json?
-  /// Field referred in an index, but found no data to define the type.
-  token      Json?  @unique
+  id         String   @id @default(uuid())
+  identifier String
+  token      String   @unique
+  expires    DateTime
 
   @@unique([identifier, token])
 }

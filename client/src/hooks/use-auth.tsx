@@ -20,27 +20,21 @@ interface User {
   username?: string
 }
 
-type AuthContextType = {
-  user: User | null
-  isLoading: boolean
-  error: Error | null
-  loginMutation: UseMutationResult<LoginResponse, Error, LoginData>
-  logoutMutation: UseMutationResult<void, Error, void>
-  registerMutation: UseMutationResult<RegisterResponse, Error, RegisterData>
-  googleAuthUrl: string
+interface MutationContext {
+  onNavigate?: (path: string) => void
 }
 
-interface LoginData {
-  email: string
-  password: string
-}
-
-interface LoginResponse {
+type LoginResponse = {
   token: string
   user: User
 }
 
-interface RegisterData {
+type LoginData = {
+  email: string
+  password: string
+}
+
+type RegisterData = {
   name: string
   email: string
   password: string
@@ -50,9 +44,24 @@ interface RegisterData {
   address?: string
 }
 
-interface RegisterResponse {
+type RegisterResponse = {
   message: string
   user?: User
+}
+
+type AuthContextType = {
+  user: User | null
+  isLoading: boolean
+  error: Error | null
+  loginMutation: UseMutationResult<LoginResponse, Error, LoginData, unknown>
+  logoutMutation: UseMutationResult<void, Error, void, unknown>
+  registerMutation: UseMutationResult<
+    RegisterResponse,
+    Error,
+    RegisterData,
+    unknown
+  >
+  googleAuthUrl: string
 }
 
 export const AuthContext = createContext<AuthContextType | null>(null)
@@ -95,64 +104,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     mutationFn: async (data) => {
       return api.auth.login(data.email, data.password)
     },
-    onSuccess: (data) => {
+    onSuccess: async (data) => {
       // Store token in localStorage
       localStorage.setItem('token', data.token)
 
       // Refresh user data
-      refetchUser()
-
-      // Show success toast
-      toast({
-        title: 'Login successful',
-        description: `Welcome back${
-          data.user.name ? ', ' + data.user.name : ''
-        }!`,
-      })
-
-      // Check if school is approved before redirecting
-      if (
-        data.user.role === 'SCHOOL' ||
-        data.user.role === 'COACHING' ||
-        data.user.role === 'COLLEGE'
-      ) {
-        api.auth.checkSchoolStatus().then((response) => {
-          if (response.status === 'PENDING') {
-            toast({
-              title: 'Registration Pending',
-              description:
-                'Your registration is pending admin approval. You will be notified via email once approved.',
-              variant: 'default',
-            })
-            // Redirect to a pending approval page
-            window.location.href = '/auth/pending'
-          } else if (response.status === 'REJECTED') {
-            toast({
-              title: 'Registration Rejected',
-              description:
-                'Your registration has been rejected. Please contact support for more information.',
-              variant: 'destructive',
-            })
-            // Log them out
-            localStorage.removeItem('token')
-            window.location.href = '/auth'
-          } else {
-            // Approved - redirect to dashboard
-            window.location.href = '/dashboard'
-          }
-        })
-      } else if (data.user.role === 'ADMIN') {
-        window.location.href = '/admin/dashboard'
-      } else {
-        window.location.href = '/dashboard'
-      }
+      await refetchUser()
     },
     onError: (error: Error) => {
       toast({
-        title: 'Login failed',
-        description: error.message,
+        title: 'Login Failed',
+        description: error.message || 'Invalid credentials',
         variant: 'destructive',
       })
+      throw error
     },
   })
 
@@ -167,9 +132,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           data.message ||
           'Your registration is pending admin approval. You will be notified via email once approved.',
       })
-
-      // Redirect to login page
-      window.location.href = '/auth'
     },
     onError: (error: Error) => {
       toast({
@@ -177,25 +139,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         description: error.message,
         variant: 'destructive',
       })
+      throw error
     },
   })
 
   const logoutMutation = useMutation<void, Error, void>({
     mutationFn: async () => {
-      // Clear token from localStorage
       localStorage.removeItem('token')
+      await refetchUser()
     },
     onSuccess: () => {
-      // Clear user data
-      refetchUser()
-
       toast({
         title: 'Logged out',
         description: 'You have been successfully logged out.',
       })
-
-      // Redirect to login page
-      window.location.href = '/auth'
     },
     onError: (error: Error) => {
       toast({

@@ -84,6 +84,12 @@ export const authApi = {
       method: 'POST',
       body: JSON.stringify({ code }),
     }),
+
+  checkEmail: (email: string) =>
+    apiRequest<{ exists: boolean }>('/api/auth/check-email', {
+      method: 'POST',
+      body: JSON.stringify({ email }),
+    }),
 }
 
 // Classes API

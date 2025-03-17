@@ -1,40 +1,65 @@
 import express from 'express'
 import cors from 'cors'
-import { join } from 'path'
-import { fileURLToPath } from 'url'
-import { dirname } from 'path'
-import schoolRoutes from './routes/schools'
-import adminRoutes from './routes/admin'
-import authRoutes from './routes/auth'
+import session from 'express-session'
+import passport from 'passport'
+import { PrismaClient } from '@prisma/client'
+import schoolRoutes from './routes/schools.js'
+import adminRoutes from './routes/admin.js'
+import authRoutes from './routes/auth.js'
 import cookieParser from 'cookie-parser'
-import { authenticateToken } from './middleware/auth'
-import { prisma } from './lib/prisma'
-
-const __filename = fileURLToPath(import.meta.url)
-const __dirname = dirname(__filename)
+import { authenticateToken } from './middleware/auth.js'
 
 const app = express()
-const port = process.env.PORT || 3000
+const prisma = new PrismaClient()
 
-// CORS configuration
+// Middleware
+app.use(express.json())
 app.use(
   cors({
-    origin: [
-      'http://localhost:5173',
-      'http://localhost:3000',
-      /\.ngrok-free\.app$/, // Allow all ngrok domains
-      /\.ngrok\.io$/, // Allow all ngrok domains (older format)
-    ],
+    origin: process.env.FRONTEND_URL,
     credentials: true,
-    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization'],
   })
 )
 
-app.use(express.json())
+// Session configuration
+app.use(
+  session({
+    secret: process.env.SESSION_SECRET!,
+    resave: true,
+    saveUninitialized: true,
+    cookie: {
+      secure: process.env.NODE_ENV === 'production',
+      httpOnly: true,
+      maxAge: 24 * 60 * 60 * 1000, // 24 hours
+      sameSite: 'lax',
+      path: '/',
+    },
+  })
+)
+
+// Cookie parser middleware (before passport)
 app.use(cookieParser())
 
-// API routes
+// Initialize Passport
+app.use(passport.initialize())
+app.use(passport.session())
+
+passport.serializeUser((user: any, done) => {
+  done(null, user.id)
+})
+
+passport.deserializeUser(async (id: string, done) => {
+  try {
+    const user = await prisma.user.findUnique({
+      where: { id },
+    })
+    done(null, user)
+  } catch (error) {
+    done(error)
+  }
+})
+
+// Routes
 app.use('/api/schools', schoolRoutes)
 app.use('/api/admin', adminRoutes)
 app.use('/api/auth', authRoutes)
@@ -49,26 +74,13 @@ app.get('/api/user', authenticateToken, async (req, res) => {
   }
 })
 
-// Serve static files from the React app
-app.use(express.static(join(__dirname, '../dist/public')))
-
-// The "catchall" handler: for any request that doesn't
-// match one above, send back React's index.html file.
-app.get('*', (_req, res) => {
-  res.sendFile(join(__dirname, '../dist/public/index.html'))
+// Health check
+app.get('/health', (req, res) => {
+  res.json({ status: 'ok' })
 })
 
-// Test database connection
-prisma
-  .$connect()
-  .then(() => {
-    console.log('Connecting to database:', process.env.DATABASE_URL)
-  })
-  .catch((error) => {
-    console.error('Database connection error:', error)
-    process.exit(1)
-  })
+const port = process.env.PORT || 3000
 
 app.listen(port, () => {
-  console.log(`Server running at http://localhost:${port}`)
+  console.log(`Server running on port ${port}`)
 })
